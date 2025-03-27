@@ -206,6 +206,18 @@ defmodule EctoSyncTest do
         1000 ->
           raise "no inserts"
       end
+
+      {:ok, post2} = TestRepo.insert(%Post{person_id: person.id})
+
+      receive do
+        %{schema: Post, event: :inserted} = sync_args ->
+          synced = EctoSync.sync(post2, sync_args)
+          assert synced == post2
+          assert [^post, ^post2] = EctoSync.sync([post], sync_args)
+      after
+        1000 ->
+          raise "no inserts"
+      end
     end
 
     test "subscribe/2 to updates", %{person: person} do

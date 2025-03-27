@@ -23,6 +23,10 @@ defmodule EctoSync.Syncer do
     [new]
   end
 
+  defp do_sync([%{__struct__: schema} | _] = values, new, %{schema: schema, event: :inserted}) do
+    values ++ [new]
+  end
+
   defp do_sync(values, new, config) when is_list(values) do
     Enum.map(values, &update_all(&1, new, config))
   end
