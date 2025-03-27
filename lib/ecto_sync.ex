@@ -39,17 +39,9 @@ defmodule EctoSync do
   def init(state) do
     children = [
       {Cachex, state.cache_name},
-      {EctoWatch, [repo: state.repo, pub_sub: state.pub_sub, watchers: state.watchers]},
-      {Registry, keys: :duplicate, name: EventRegistry},
-      {EventHandler,
-       [
-         name: EventHandler,
-         pub_sub: state.pub_sub,
-         schemas: state.schemas,
-         watchers: state.watchers,
-         repo: state.repo,
-         cache_name: state.cache_name
-       ]}
+      {Phoenix.PubSub, name: :ecto_sync_pub_sub, adapter: EctoSync.PubSub},
+      {EctoWatch, [repo: state.repo, pub_sub: :ecto_sync_pub_sub, watchers: state.watchers]},
+      {Registry, keys: :duplicate, name: EventRegistry}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -444,8 +436,9 @@ defmodule EctoSync do
       EventHandler.subscribe(watcher_identifier, watch_id)
 
       if Registry.count_match(EventRegistry, {watcher_identifier, id}, :_) == 0 do
-        #   # Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
+        Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
         Registry.register(EventRegistry, {watcher_identifier, id}, opts)
+        EctoWatch.subscribe(watcher_identifier, id)
       end
 
       {watcher_identifier, id}

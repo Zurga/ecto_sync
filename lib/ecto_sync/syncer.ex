@@ -6,26 +6,24 @@ defmodule EctoSync.Syncer do
   import EctoSync.Helpers
 
   @spec sync(atom() | Schema.t(), SyncConfig.t()) :: Schema.t() | term()
-  def sync(:cached, %SyncConfig{event: :deleted, id: id}), do: {:ok, id}
+  def sync(:cached, %SyncConfig{event: :deleted, id: id}), do: id
 
-  def sync(:cached, %SyncConfig{} = config),
-    do: {:ok, get_from_cache(config)}
+  def sync(:cached, %SyncConfig{} = config), do: get_from_cache(config)
 
   def sync(value_or_values, %SyncConfig{event: :deleted} = config),
-    do: {:ok, do_sync(value_or_values, config.id, config)}
+    do: do_sync(value_or_values, config.id, config)
 
   def sync(value_or_values, %SyncConfig{} = config) do
     new = get_from_cache(config)
 
-    {:ok, do_sync(value_or_values, new, config)}
+    do_sync(value_or_values, new, config)
   end
 
   defp do_sync(values, new, config) when is_list(values) do
     Enum.map(values, &update_all(&1, new, config))
   end
 
-  defp do_sync(value, new, config),
-    do: update_all(value, new, config)
+  defp do_sync(value, new, config), do: update_all(value, new, config)
 
   defp update_all(values, new, config) when is_list(values),
     do: Enum.map(values, &update_all(&1, new, config))
