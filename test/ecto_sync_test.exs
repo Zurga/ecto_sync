@@ -201,6 +201,7 @@ defmodule EctoSyncTest do
         %{schema: Post, event: :inserted} = sync_args ->
           synced = EctoSync.sync(post, sync_args)
           assert synced == post
+          assert [^post] = EctoSync.sync([], sync_args)
       after
         1000 ->
           raise "no inserts"
