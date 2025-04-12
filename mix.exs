@@ -44,7 +44,7 @@ defmodule EctoSync.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ecto_watch, "~> 0.12.5"},
+      {:ecto_watch, "~> 0.13.0"},
       {:cachex, "~> 4.0.3"},
       {:ex_doc, "~> 0.37.2", only: :dev, runtime: false},
       {:credo, "~> 1.6", runtime: false, only: [:dev, :test]},
