@@ -63,7 +63,16 @@ defmodule EctoSync.Helpers do
     |> hd()
   end
 
-  def reduce_assocs(schema_mod, acc \\ nil, function) when is_function(function) do
+  def reduce_assocs(schema_mod, acc \\ nil, function)
+
+  def reduce_assocs(%Ecto.Association.NotLoaded{} = value, _acc, _function), do: value
+
+  def reduce_assocs(%{__struct__: schema_mod} = value, _acc, function)
+      when is_function(function) do
+    reduce_assocs(schema_mod, value, function)
+  end
+
+  def reduce_assocs(schema_mod, acc, function) when is_function(function) do
     schema_mod.__schema__(:associations)
     |> Enum.reduce(acc, fn key, acc ->
       assoc_info = schema_mod.__schema__(:association, key)
@@ -84,26 +93,26 @@ defmodule EctoSync.Helpers do
     end)
   end
 
-  def update_cache(%SyncConfig{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
-    Cachex.del(cache_name, {schema, id})
-    {:ok, {schema, id}}
-  end
+  # def update_cache(%SyncConfig{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
+  #   Cachex.del(cache_name, {schema, id})
+  #   {:ok, {schema, id}}
+  # end
 
-  def update_cache(%SyncConfig{
-        schema: schema,
-        event: _event,
-        id: id,
-        cache_name: cache_name,
-        get_fun: get_fun
-      }) do
-    key = {schema, id}
+  # def update_cache(%SyncConfig{
+  #       schema: schema,
+  #       event: _event,
+  #       id: id,
+  #       cache_name: cache_name,
+  #       get_fun: get_fun
+  #     }) do
+  #   key = {schema, id}
 
-    record =
-      get_fun.(schema, id)
+  #   record =
+  #     get_fun.(schema, id)
 
-    {:ok, true} = Cachex.put(cache_name, key, record)
-    {:ok, key}
-  end
+  #   {:ok, true} = Cachex.put(cache_name, key, record)
+  #   {:ok, key}
+  # end
 
   defp maybe_call_with_struct(function, key, struct, acc) do
     if is_function(function, 3) do

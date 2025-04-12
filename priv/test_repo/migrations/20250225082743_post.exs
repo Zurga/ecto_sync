@@ -6,6 +6,7 @@ defmodule TestRepo.Migrations.Post do
       add :name, :string
       add :body, :string
       add :person_id, references(:persons, on_delete: :nilify_all)
+      add :comment_id, references(:posts)
     end
   end
 end

@@ -19,8 +19,7 @@ defmodule EctoSync.PubSub do
 
     Registry.dispatch(pubsub, topic, fn entries ->
       if entries != [] do
-        sync_conf =
-          EctoSync.SyncConfig.new(id, schema_event, :ecto_sync, TestRepo)
+        sync_conf = EctoSync.SyncConfig.new(id, schema_event)
 
         for {pid, _} <- entries do
           send(pid, sync_conf)

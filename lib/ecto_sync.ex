@@ -18,8 +18,8 @@ defmodule EctoSync do
 
   use Supervisor
   require Logger
+  alias EctoSync.{PubSub, Subscriber, SyncConfig, Syncer}
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
-  alias EctoSync.EventHandler
   import EctoSync.Helpers
 
   def start_link(opts \\ [name: __MODULE__]) do
@@ -37,9 +37,11 @@ defmodule EctoSync do
 
   @impl true
   def init(state) do
+    :persistent_term.put(SyncConfig, state)
+
     children = [
       {Cachex, state.cache_name},
-      {Phoenix.PubSub, name: :ecto_sync_pub_sub, adapter: EctoSync.PubSub},
+      {Phoenix.PubSub, name: :ecto_sync_pub_sub, adapter: PubSub},
       {EctoWatch, [repo: state.repo, pub_sub: :ecto_sync_pub_sub, watchers: state.watchers]},
       {Registry, keys: :duplicate, name: EventRegistry}
     ]
@@ -47,7 +49,7 @@ defmodule EctoSync do
     Supervisor.init(children, strategy: :one_for_one)
   end
 
-  @spec all_events(list(), module(), list()) :: list()
+  @spec watchers(list(), module(), list()) :: list()
   @doc """
   Create watcher specifications for a given schema.
 
@@ -61,7 +63,7 @@ defmodule EctoSync do
   Assuming the same schemas are present as in the Use Cases page.
   ```elixir
   # Generate events for a schema without associations
-  all_events(MyApp.User)
+  watchers(MyApp.User)
   # => [
   #      {MyApp.User, :inserted, []},
   #      {MyApp.User, :updated, []},
@@ -69,7 +71,7 @@ defmodule EctoSync do
   #    ]
 
   # Generate events for all associations
-  all_events(MyApp.User, assocs: [:comments, posts: :tags])
+  watchers(MyApp.User, assocs: [:comments, posts: :tags])
   # => Includes events for:
   # [
   #      {MyApp.User, :inserted, []}, {MyApp.User, :updated, []}, {MyApp.User, :deleted, []}
@@ -80,7 +82,7 @@ defmodule EctoSync do
   # ]
 
   # Generate events with three-level deep associations, selectively including `posts` but not `comments`
-  all_events(MyApp.User, assocs: [has: [posts: [has: false]]])
+  watchers(MyApp.User, assocs: [has: [posts: [has: false]]])
   # => Includes events for:
   #      {MyApp.User, :inserted, []}, {MyApp.User, :updated, []}, {MyApp.User, :deleted, []}
   #      {MyApp.Post, :inserted, []}, {MyApp.Post, :updated, []}, {MyApp.Post, :deleted, []}
@@ -88,105 +90,20 @@ defmodule EctoSync do
 
   ```
   """
-  def all_events(watchers \\ [], schema)
+  def watchers(watchers \\ [], schema)
 
-  def all_events(watchers, schema) when is_list(watchers) and is_atom(schema),
-    do: all_events(watchers, schema, [])
+  def watchers(watchers, schema) when is_list(watchers) and is_atom(schema),
+    do: watchers(watchers, schema, [])
 
-  def all_events(schema, opts) when is_atom(schema), do: all_events([], schema, opts)
+  def watchers(schema, opts) when is_atom(schema), do: watchers([], schema, opts)
 
-  @doc "See `all_events/2`."
-  def all_events(watchers, schema, opts) do
+  @doc "See `watchers/2`."
+  def watchers(watchers, schema, opts) do
     unless ecto_schema_mod?(schema) do
       raise ArgumentError, "Expected a module alias to an Ecto Schema"
     end
 
-    do_all_events(watchers, schema, opts)
-  end
-
-  defp do_all_events(
-         watchers,
-         %ManyToMany{join_through: join_through, related: related, join_keys: join_keys},
-         opts
-       )
-       when is_atom(join_through) do
-    [{owner_key, _}, {related_key, _}] = join_keys
-
-    [{join_through, extra_columns: [owner_key, related_key]}, {related, opts}]
-    |> Enum.reduce(watchers, fn {schema, opts}, watchers ->
-      do_all_events(watchers, schema, opts)
-    end)
-  end
-
-  defp do_all_events(
-         watchers,
-         %ManyToMany{
-           join_through: join_through,
-           related: related,
-           join_keys: join_keys
-         },
-         opts
-       )
-       when is_binary(join_through) do
-    [{owner_key, _}, {related_key, _}] = join_keys
-    association_columns = [owner_key, related_key]
-
-    @events
-    |> Enum.reduce(watchers, fn event, watchers ->
-      label = String.to_atom("#{join_through}_#{event}")
-
-      [
-        {%{
-           table_name: join_through,
-           primary_key: :id,
-           columns: association_columns,
-           association_columns: association_columns
-         }, event, extra_columns: association_columns, label: label}
-        | watchers
-      ]
-    end)
-    |> do_all_events(related, opts)
-  end
-
-  defp do_all_events(watchers, %BelongsTo{related: related}, opts) do
-    do_all_events(watchers, related, opts)
-  end
-
-  defp do_all_events(watchers, %Has{related: related, related_key: related_key}, opts) do
-    do_all_events(watchers, related, Keyword.put(opts, :extra_columns, [related_key]))
-  end
-
-  defp do_all_events(watchers, nil, _opts), do: watchers
-
-  defp do_all_events(watchers, schema, opts) do
-    {assoc_fields, opts} =
-      Keyword.pop(opts, :assocs, [])
-
-    {columns, opts} = Keyword.pop(opts, :extra_columns, [])
-
-    extra_columns =
-      merge_extra_columns(schema, columns, assoc_fields)
-
-    opts = Keyword.put(opts, :extra_columns, extra_columns)
-
-    watchers =
-      (watchers ++ Enum.map(@events, &{schema, &1, opts}))
-      |> Enum.uniq()
-
-    Enum.reduce(assoc_fields, watchers, fn
-      key, watchers when is_tuple(key) or is_atom(key) ->
-        {key, nested} =
-          case key do
-            {_, _} -> key
-            key -> {key, []}
-          end
-
-        assoc = schema.__schema__(:association, key)
-        do_all_events(watchers, assoc, Keyword.put([], :assocs, nested))
-
-      _, watchers ->
-        watchers
-    end)
+    do_watchers(watchers, schema, opts)
   end
 
   @spec subscriptions(EctoWatch.watcher_identifier(), term()) :: [{pid(), Registry.value()}]
@@ -218,293 +135,115 @@ defmodule EctoSync do
   iex> EctoSync.subscribe(%Test{id: 1})
   [{{Test, :updated}, 1}, {{Test, :deleted}, 1}]
   """
-  @spec subscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), term(), term()) ::
-          subscriptions()
-  def subscribe(values, id \\ nil, opts \\ [])
+  # @spec subscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), term(), term()) ::
+  # subscriptions()
+  def subscribe(values), do: subscribe(values, [])
 
-  def subscribe(values, id, opts) when is_list(values),
-    do: Enum.flat_map(values, &subscribe(&1, id, opts))
+  def subscribe(values, opts) when is_list(values),
+    do: Enum.flat_map(values, &subscribe(&1, opts))
 
-  def subscribe(value, _id, opts) when is_struct(value) do
-    events = subscribe_events(value)
-    schema = get_schema(value)
-
-    id =
-      if ecto_schema_mod?(schema) do
-        primary_key(value)
-      else
-        raise_no_ecto(schema)
-      end
-
-    do_subscribe(events, id, opts)
+  def subscribe(value, opts) do
+    for {watcher_identifier, id} <- Subscriber.subscribe(value, opts) do
+      do_subscribe(watcher_identifier, id, opts)
+    end
   end
 
-  def subscribe(watcher_identifier, id, opts) do
-    events = subscribe_events(watcher_identifier)
+  defdelegate sync(value, sync_config), to: Syncer
 
-    do_subscribe(events, id, opts)
-  end
+  defdelegate unsubscribe(watcher_identifier, id), to: Subscriber
 
-  def unsubscribe(record) do
-    EventHandler.unsubscribe(record)
-  end
+  defp do_watchers(
+         watchers,
+         %ManyToMany{join_through: join_through, related: related, join_keys: join_keys},
+         opts
+       )
+       when is_atom(join_through) do
+    [{owner_key, _}, {related_key, _}] = join_keys
 
-  @doc """
-  Subscribe to insert/update/delete events for a given Ecto.Schema struct.
-  """
-  # TODO make this subscribe to everything related to this schema, even non preloaded assocs
-  @spec subscribe_all(schema_or_list_of_schemas()) :: subscriptions()
-  def subscribe_all(value), do: reduce_to_seen(value, &do_subscribe_all/2)
-
-  @doc """
-  Subscribe to all events related to the assocs of a given schema.
-  """
-  @spec subscribe_assocs(schema_or_list_of_schemas(), term()) :: subscriptions()
-  def subscribe_assocs(schema, id \\ nil)
-
-  def subscribe_assocs(schema, id) when is_struct(schema) do
-    schema_mod = get_schema(schema)
-    subscribe_assocs(schema_mod, id || schema.id)
-  end
-
-  def subscribe_assocs(schema_mod, _id) when is_atom(schema_mod) do
-    reduce_to_seen(schema_mod, &do_subscribe_assocs/2)
-  end
-
-  defp do_subscribe_assocs(schema_mod, seen) do
-    reduce_assocs(schema_mod, seen, fn {_key, assoc_info}, seen ->
-      related = Map.get(assoc_info, :join_through, Map.get(assoc_info, :related))
-
-      if is_binary(related) do
-        seen
-      else
-        events =
-          subscribe_events({related, :all})
-          |> Enum.map(&{&1, nil})
-          |> MapSet.new()
-
-        all_events = MapSet.difference(events, seen)
-
-        if all_events == MapSet.new([]) do
-          seen
-        else
-          all_events
-          |> Enum.each(fn {watcher_identifier, id} ->
-            subscribe(watcher_identifier, id)
-          end)
-
-          do_subscribe_assocs(related, MapSet.union(all_events, seen))
-        end
-      end
+    [{join_through, extra_columns: [owner_key, related_key]}, {related, opts}]
+    |> Enum.reduce(watchers, fn {schema, opts}, watchers ->
+      do_watchers(watchers, schema, opts)
     end)
   end
 
-  # def subscribe_assocs(schema_mod, id) when is_atom(schema_mod) do
-  #   schema_mod.__schema__(:associations)
-  #   |> Enum.reduce(MapSet.new([]), fn key, seen ->
-  #     %{related: related} =
-  #       schema_mod.__schema__(:association, key)
+  defp do_watchers(
+         watchers,
+         %ManyToMany{
+           join_through: join_through,
+           related: related,
+           join_keys: join_keys
+         },
+         opts
+       )
+       when is_binary(join_through) do
+    [{owner_key, _}, {related_key, _}] = join_keys
+    association_columns = [owner_key, related_key]
 
-  #     events =
-  #       subscribe_events({related, :all})
-  #       |> Enum.map(&{&1, id})
-  #       |> MapSet.new()
+    @events
+    |> Enum.reduce(watchers, fn event, watchers ->
+      label = String.to_atom("#{join_through}_#{event}")
 
-  #     MapSet.difference(events, seen)
-  #     |> Enum.reduce([], fn {identifier, id}, acc ->
-  #       acc ++ subscribe(identifier, id)
-  #     end)
-  #     |> MapSet.new()
-  #     |> MapSet.union(seen)
-  #   end)
-  #   |> MapSet.to_list()
-  # end
-  @doc """
-  Subscribe to all events related to the assocs that are preloaded in the given value.
-  """
-  @spec subscribe_preloads(schema_or_list_of_schemas()) :: subscriptions()
-  def subscribe_preloads(value) do
-    callback = &do_subscribe_preloads/3
-
-    reduce_to_seen(value, &do_subscribe_preloads(&1, &2, callback))
+      [
+        {%{
+           table_name: join_through,
+           primary_key: :id,
+           columns: association_columns,
+           association_columns: association_columns
+         }, event, extra_columns: association_columns, label: label}
+        | watchers
+      ]
+    end)
+    |> do_watchers(related, opts)
   end
 
-  defdelegate sync(struct, config), to: EctoSync.Syncer
-
-  defp do_subscribe_all(value, seen, _callback \\ nil) when is_struct(value) do
-    schema_mod = get_schema(value)
-
-    if ecto_schema_mod?(schema_mod) do
-      subscriptions = subscribe(value) |> MapSet.new()
-
-      seen = MapSet.union(seen, subscriptions)
-
-      do_subscribe_preloads(value, seen, &do_subscribe_all/3)
-    else
-      seen
-    end
+  defp do_watchers(watchers, %BelongsTo{related: related}, opts) do
+    do_watchers(watchers, related, opts)
   end
 
-  defp do_subscribe_preloads(value, seen, callback) when is_function(callback) do
-    schema_mod = get_schema(value)
-
-    id = primary_key(value)
-
-    if ecto_schema_mod?(schema_mod) do
-      reduce_preloaded_assocs(value, seen, fn
-        {_key, assoc_info}, assoc, seen ->
-          subscribe_assoc(id, assoc, assoc_info, seen, callback)
-      end)
-    end
+  defp do_watchers(watchers, %Has{related: related, related_key: related_key}, opts) do
+    do_watchers(watchers, related, Keyword.put(opts, :extra_columns, [related_key]))
   end
 
-  defp subscribe_assoc(id, assocs, assoc_info, seen, callback) when is_list(assocs),
-    do:
-      Enum.reduce(assocs, seen, fn assoc, seen ->
-        subscribe_assoc(id, assoc, assoc_info, seen, callback)
-      end)
+  defp do_watchers(watchers, nil, _opts), do: watchers
 
-  defp subscribe_assoc(
-         id,
-         assoc,
-         %ManyToMany{join_through: join_through, join_keys: [{parent_key, _} | _]} = assoc_info,
-         seen,
-         callback
-       ) do
-    event_label = fn
-      event when is_binary(join_through) ->
-        String.to_atom("#{join_through}_#{event}")
+  defp do_watchers(watchers, schema, opts) do
+    {assoc_fields, opts} =
+      Keyword.pop(opts, :assocs, [])
 
-      event ->
-        {join_through, event}
-    end
+    {columns, opts} = Keyword.pop(opts, :extra_columns, [])
 
-    join_through_events =
-      [:updated, :deleted]
-      |> Enum.map(&{event_label.(&1), {parent_key, id}})
+    extra_columns =
+      merge_extra_columns(schema, columns, assoc_fields)
 
-    # Subscribe to related updates, deletes
-    assoc_events =
-      [child_inserted_event(assoc_info, id) | join_through_events ++ assoc_events(assoc)]
-      |> MapSet.new()
-      |> MapSet.difference(seen)
+    opts = Keyword.put(opts, :extra_columns, extra_columns)
 
-    for {event, id} <- assoc_events do
-      subscribe(event, id)
-    end
+    watchers =
+      (watchers ++ Enum.map(@events, &{schema, &1, opts}))
+      |> Enum.uniq()
 
-    callback.(assoc, MapSet.union(assoc_events, seen), callback)
+    Enum.reduce(assoc_fields, watchers, fn
+      key, watchers when is_tuple(key) or is_atom(key) ->
+        {key, nested} =
+          case key do
+            {_, _} -> key
+            key -> {key, []}
+          end
+
+        assoc = schema.__schema__(:association, key)
+        do_watchers(watchers, assoc, Keyword.put([], :assocs, nested))
+
+      _, watchers ->
+        watchers
+    end)
   end
 
-  defp subscribe_assoc(id, assoc, assoc_info, seen, callback) do
-    all_events =
-      if is_nil(assoc) do
-        [child_inserted_event(assoc_info, id)]
-      else
-        [child_inserted_event(assoc_info, id) | assoc_events(assoc)]
-      end
-      |> MapSet.new()
-      |> MapSet.difference(seen)
-
-    for {event, id} <- all_events do
-      subscribe(event, id)
-    end
-
-    seen = MapSet.union(seen, all_events)
-
-    if is_nil(assoc) do
-      seen
-    else
-      callback.(assoc, seen, callback)
-    end
-  end
-
-  defp assoc_events(assoc) do
-    subscribe_events(assoc)
-    |> Enum.map(&{&1, primary_key(assoc)})
-  end
-
-  defp do_subscribe(events, id, opts) do
-    watch_id = (is_tuple(id) && nil) || id
-
-    for watcher_identifier <- events do
-      # with {:error, error} <- WatcherServer.pub_sub_subscription_details(watcher_identifier, id) do
-      #   raise ArgumentError, error
-      # end
-
-      Registry.lookup(EventRegistry, {watcher_identifier, id})
-      EventHandler.subscribe(watcher_identifier, watch_id)
-
-      if Registry.count_match(EventRegistry, {watcher_identifier, id}, :_) == 0 do
-        Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
-        Registry.register(EventRegistry, {watcher_identifier, id}, opts)
-        EctoWatch.subscribe(watcher_identifier, id)
-      end
-
+  defp do_subscribe(watcher_identifier, id, opts) do
+    if Registry.count_match(EventRegistry, {watcher_identifier, id}, :_) == 0 do
+      Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
+      Registry.register(EventRegistry, {watcher_identifier, id}, opts)
+      EctoWatch.subscribe(watcher_identifier, id)
       {watcher_identifier, id}
     end
-  end
-
-  defp subscribe_events(label_or_schema) when is_atom(label_or_schema) do
-    if ecto_schema_mod?(label_or_schema) do
-      subscribe_events({label_or_schema, :all})
-    else
-      List.wrap(label_or_schema)
-    end
-  end
-
-  defp subscribe_events(values) when is_list(values) do
-    Enum.map(values, &subscribe_events(&1)) |> List.flatten()
-  end
-
-  defp subscribe_events(value) when is_struct(value) do
-    schema = get_schema(value)
-
-    if ecto_schema_mod?(schema) do
-      ~w/updated deleted/a
-      |> Enum.map(&{schema, &1})
-    else
-    end
-  end
-
-  defp subscribe_events({schema, event} = watcher_identifier)
-       when is_atom(schema) and event in [:all | @events] do
-    case watcher_identifier do
-      {schema, :all} -> Enum.map(@events, &{schema, &1})
-      _ -> List.wrap(watcher_identifier)
-    end
-  end
-
-  defp child_inserted_event(
-         %ManyToMany{join_through: join_through, join_keys: join_keys},
-         parent_id
-       ) do
-    [{parent_key, _} | _] = join_keys
-
-    watcher_identifier =
-      if is_binary(join_through) do
-        String.to_atom("#{join_through}_inserted")
-      else
-        {join_through, :inserted}
-      end
-
-    {watcher_identifier, {parent_key, parent_id}}
-  end
-
-  defp child_inserted_event(%Has{related_key: related_key, related: schema}, parent_id) do
-    assoc_field = {related_key, parent_id}
-
-    {{schema, :inserted}, assoc_field}
-  end
-
-  defp child_inserted_event(%BelongsTo{related: schema}, _parent_id) do
-    {{schema, :inserted}, nil}
-  end
-
-  defp reduce_to_seen(value, function) do
-    List.wrap(value)
-    |> Enum.reduce(MapSet.new([]), function)
-    |> MapSet.to_list()
   end
 
   defp merge_extra_columns(schema, columns, assoc_fields) do
@@ -532,7 +271,4 @@ defmodule EctoSync do
     end)
     |> Enum.reverse()
   end
-
-  defp raise_no_ecto(schema),
-    do: raise(ArgumentError, "Expected an Ecto schema struct, got #{inspect(schema)}")
 end
