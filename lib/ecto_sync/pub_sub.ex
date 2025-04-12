@@ -1,4 +1,5 @@
 defmodule EctoSync.PubSub do
+  @moduledoc false
   @behaviour Phoenix.PubSub.Adapter
 
   use Supervisor
