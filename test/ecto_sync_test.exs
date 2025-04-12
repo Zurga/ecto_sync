@@ -742,7 +742,7 @@ defmodule EctoSyncTest do
       EctoSync,
       repo: TestRepo,
       watchers:
-        []
+        [{Label, :inserted, label: :label}]
         |> EctoSync.watchers(Post,
           assocs: [:person, :tags, :labels],
           extra_columns: [:person_id]
