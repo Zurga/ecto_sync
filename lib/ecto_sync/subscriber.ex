@@ -9,6 +9,9 @@ defmodule EctoSync.Subscriber do
 
   def subscribe(watcher_identifier_or_struct, id \\ nil)
 
+  def subscribe([value | _] = list, opts) when is_struct(value),
+    do: Enum.flat_map(list, &subscribe(&1, opts))
+
   def subscribe(value, opts) when is_struct(value) do
     subscribe_events(value)
     |> Enum.concat(
@@ -16,6 +19,14 @@ defmodule EctoSync.Subscriber do
         subscribe_events(parent, assoc_info)
       end)
     )
+    |> then(fn events ->
+      if opts[:inserted] do
+        schema = get_schema(value)
+        Enum.concat(events, subscribe({schema, :inserted}, nil))
+      else
+        events
+      end
+    end)
     |> Enum.sort()
     |> Enum.uniq()
   end

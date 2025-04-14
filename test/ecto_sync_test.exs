@@ -78,14 +78,14 @@ defmodule EctoSyncTest do
   end
 
   describe "subscribe/3" do
-    test "subscribe to Ecto.Schema" do
-      # assert [
-      #          {{Post, :inserted}, nil},
-      #          {{Post, :updated}, nil},
-      #          {{Post, :deleted}, nil}
-      #        ] ==
-      #          subscribe({Post, :all})
-    end
+    # test "subscribe to Ecto.Schema" do
+    #   assert [
+    #            {{Post, :inserted}, nil},
+    #            {{Post, :updated}, nil},
+    #            {{Post, :deleted}, nil}
+    #          ] ==
+    #            subscribe({Post, :all}, nil)
+    # end
 
     test "subscribe to Ecto.Schema struct", %{person_with_posts: %{posts: [post, post2]} = person} do
       assert [
@@ -98,6 +98,22 @@ defmodule EctoSyncTest do
                {{Post, :updated}, post2.id}
              ] ==
                subscribe(person, assocs: [:posts])
+    end
+
+    test "subscribe to Ecto.Schema struct with inserted opt", %{
+      person_with_posts: %{posts: [post, post2]} = person
+    } do
+      assert [
+               {{Person, :deleted}, person.id},
+               {{Person, :inserted}, nil},
+               {{Person, :updated}, person.id},
+               {{Post, :deleted}, post.id},
+               {{Post, :deleted}, post2.id},
+               {{Post, :inserted}, {:person_id, person.id}},
+               {{Post, :updated}, post.id},
+               {{Post, :updated}, post2.id}
+             ] ==
+               subscribe(person, assocs: [:posts], inserted: true)
     end
 
     test "subscribe to a list of Ecto.Schema structs", %{
