@@ -139,8 +139,14 @@ defmodule EctoSync do
   # subscriptions()
   def subscribe(values), do: subscribe(values, [])
 
-  def subscribe(values, opts) when is_list(values),
-    do: Enum.flat_map(values, &subscribe(&1, opts))
+  def subscribe(values, opts) when is_list(values) do
+    values
+    |> Enum.flat_map(&Subscriber.subscribe(&1, opts))
+    |> Enum.uniq()
+    |> Enum.map(fn {watcher_identifier, id} ->
+      do_subscribe(watcher_identifier, id, opts)
+    end)
+  end
 
   def subscribe(value, opts) do
     for {watcher_identifier, id} <- Subscriber.subscribe(value, opts) do
