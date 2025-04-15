@@ -6,12 +6,22 @@ defmodule EctoSync.Syncer do
   import EctoSync.Helpers
 
   @spec sync(atom() | Schema.t() | list(Schema.t()), SyncConfig.t()) :: Schema.t() | term()
-  def sync(:cached, %SyncConfig{event: :deleted, id: id}), do: id
+  def sync(:cached, %SyncConfig{event: :deleted} = config) do
+    do_unsubscribe(config)
+  end
 
-  def sync(:cached, %SyncConfig{} = config), do: get_from_cache(config)
+  def sync(:cached, %SyncConfig{event: :inserted} = config) do
+    value = get_from_cache(config)
+    EctoSync.subscribe(value)
+    value
+  end
 
-  def sync(value_or_values, %SyncConfig{event: :deleted} = config),
-    do: do_sync(value_or_values, config.id, config)
+  def sync(:cached, config), do: get_from_cache(config)
+
+  def sync(value_or_values, %SyncConfig{event: :deleted} = config) do
+    do_unsubscribe(config)
+    do_sync(value_or_values, config.id, config)
+  end
 
   def sync(value_or_values, %SyncConfig{} = config) do
     new = get_from_cache(config)
@@ -284,4 +294,10 @@ defmodule EctoSync.Syncer do
   end
 
   defp same_record?(_v1, _v2, _primary_key), do: false
+
+  defp do_unsubscribe(%{schema: schema, id: id}) do
+    value = struct(schema, id: id)
+    EctoSync.unsubscribe(value, [])
+    value
+  end
 end
