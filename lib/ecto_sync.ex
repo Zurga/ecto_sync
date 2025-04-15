@@ -244,7 +244,7 @@ defmodule EctoSync do
   end
 
   defp do_subscribe(watcher_identifier, id, opts) do
-    if Registry.count_match(EventRegistry, {watcher_identifier, id}, :_) == 0 do
+    if self() not in subscriptions(watcher_identifier, id) do
       Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
       Registry.register(EventRegistry, {watcher_identifier, id}, opts)
       EctoWatch.subscribe(watcher_identifier, id)
