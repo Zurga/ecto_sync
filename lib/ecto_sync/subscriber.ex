@@ -27,8 +27,8 @@ defmodule EctoSync.Subscriber do
         events
       end
     end)
-    |> Enum.sort()
     |> Enum.uniq()
+    |> Enum.sort()
   end
 
   def subscribe(watcher_identifier, id) do
@@ -108,7 +108,7 @@ defmodule EctoSync.Subscriber do
     Enum.flat_map(values, &unsubscribe(&1, opts))
   end
 
-  def unsubscribe(value, opts) when is_struct(value) do
+  def unsubscribe(value, opts \\ []) when is_struct(value) do
     subscribe_events(value)
     |> Enum.concat(
       flat_map_assocs(value, opts[:assocs] || [], fn parent, assoc_info ->
