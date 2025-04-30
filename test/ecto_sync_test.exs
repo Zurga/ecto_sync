@@ -137,7 +137,7 @@ defmodule EctoSyncTest do
     end
 
     test "subscribe to label" do
-      assert [{:label, nil}] == subscribe(:label, nil)
+      assert [{:label, []}] == subscribe(:label)
     end
   end
 
@@ -197,7 +197,7 @@ defmodule EctoSyncTest do
     end
 
     test "subscribe/2 to inserts", %{person: person} do
-      assert [{{Post, :inserted}, nil}] == subscribe({Post, :inserted}, nil)
+      assert [{{Post, :inserted}, nil}] == subscribe(Post, :inserted)
 
       {:ok, post} = TestRepo.insert(%Post{person_id: person.id})
 
@@ -206,6 +206,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(post, sync_args)
           assert synced == post
           assert [^post] = EctoSync.sync([], sync_args)
+          assert ^post = EctoSync.sync(nil, sync_args)
       after
         1000 ->
           raise "no inserts"

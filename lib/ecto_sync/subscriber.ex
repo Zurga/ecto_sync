@@ -9,6 +9,11 @@ defmodule EctoSync.Subscriber do
 
   def subscribe(watcher_identifier_or_struct, id \\ nil)
 
+  def subscribe(schema_mod, event)
+      when is_atom(schema_mod) and is_atom(event) and not is_nil(event) do
+    [{{schema_mod, event}, nil}]
+  end
+
   def subscribe([value | _] = list, opts) when is_struct(value),
     do: Enum.flat_map(list, &subscribe(&1, opts))
 

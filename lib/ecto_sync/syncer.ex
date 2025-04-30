@@ -29,6 +29,8 @@ defmodule EctoSync.Syncer do
     do_sync(value_or_values, new, config)
   end
 
+  defp do_sync(nil, new, _config), do: new
+
   defp do_sync([], new, %{event: :inserted}) do
     [new]
   end

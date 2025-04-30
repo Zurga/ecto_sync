@@ -110,8 +110,8 @@ defmodule EctoSync do
   @doc """
   Returns a list of pids that are subscribed to the given watcher identifier.
   """
-  def subscriptions({schema, event}, id \\ nil) do
-    Registry.lookup(EventRegistry, {{schema, event}, id})
+  def subscriptions(watcher_identifier, id \\ nil) do
+    Registry.lookup(EventRegistry, {watcher_identifier, id})
   end
 
   @doc """
@@ -154,6 +154,22 @@ defmodule EctoSync do
     end
   end
 
+  @doc """
+  Performs the actual syncing of a given value. Based on the input and the event, certain behaviour can be expected.
+
+  ## `:inserted` event
+  |event_struct|input|output|
+  |------------|-----|------|
+  |`%Post{id: 1}`|`[]`|` [%Post{id: 1}]`|
+  |`%Post{id: 2}`|`[%Post{id: 1}]`|` [%Post{id: 1}, %Post{id: 2}]`|
+  |`%Comment{id: 1, post_id: 1}`|`[%Post{id: 1, comments: []}]`|` [%Post{id: 1, comments: [%Comment{id: 1}]}]`|
+
+  ## `:updated` event
+
+
+  ## `:deleted` event
+
+  """
   defdelegate sync(value, sync_config), to: Syncer
 
   defdelegate unsubscribe(watcher_identifier, id), to: Subscriber
