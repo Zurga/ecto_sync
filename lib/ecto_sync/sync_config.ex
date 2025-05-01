@@ -1,6 +1,8 @@
 defmodule EctoSync.SyncConfig do
-  import Ecto.Query
   @moduledoc false
+
+  import Ecto.Query
+
   @type t :: %__MODULE__{}
   defstruct id: nil,
             schema: nil,
@@ -11,8 +13,8 @@ defmodule EctoSync.SyncConfig do
             get_fun: nil,
             preloads: []
 
-  def new(id, label) when is_atom(label) do
-    {config, state} = init(id)
+  def new({label, {id, ref}}) when is_atom(label) do
+    {config, state} = init(id, ref)
 
     {%{table_name: table, primary_key: primary_key, columns: columns}, event, _} =
       state.watchers
@@ -41,13 +43,12 @@ defmodule EctoSync.SyncConfig do
     }
   end
 
-  def new(id, {schema, event}) do
-    {config, _} = init(id)
+  def new({{schema, event}, {id, ref}}) do
+    {config, _} = init(id, ref)
     %{config | id: id, schema: schema, event: event, get_fun: &config.repo.get(&1, &2)}
   end
 
-  defp init(id) do
-    ref = :erlang.make_ref()
+  defp init(id, ref) do
     %{repo: repo, cache_name: cache_name} = state = :persistent_term.get(__MODULE__)
 
     {%__MODULE__{

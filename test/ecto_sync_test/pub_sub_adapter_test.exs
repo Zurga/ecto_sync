@@ -18,7 +18,7 @@ defmodule EctoSync.PubSubAdapterTest do
       refs =
         for _ <- 1..3 do
           receive do
-            %{ref: ref} -> ref
+            {_, {_, ref}} -> ref
           after
             1000 ->
               :nothing

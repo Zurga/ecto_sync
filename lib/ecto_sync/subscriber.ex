@@ -1,11 +1,11 @@
 defmodule EctoSync.Subscriber do
-  @moduledoc """
-  Internal module that holds all the subscription logic.
-  """
-  @events ~w/inserted updated deleted/a
+  @moduledoc false
   import EctoSync.Helpers
+
   alias Ecto.Association
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
+
+  @events ~w/inserted updated deleted/a
 
   def subscribe(watcher_identifier_or_struct, id \\ nil)
 
@@ -109,11 +109,13 @@ defmodule EctoSync.Subscriber do
     end
   end
 
+  def unsubscribe(value, opts \\ [])
+
   def unsubscribe([value | _] = values, opts) when is_struct(value) do
     Enum.flat_map(values, &unsubscribe(&1, opts))
   end
 
-  def unsubscribe(value, opts \\ []) when is_struct(value) do
+  def unsubscribe(value, opts) when is_struct(value) do
     subscribe_events(value)
     |> Enum.concat(
       flat_map_assocs(value, opts[:assocs] || [], fn parent, assoc_info ->
@@ -127,6 +129,8 @@ defmodule EctoSync.Subscriber do
   end
 
   def unsubscribe(watcher_identifier, id) do
+    id = (is_list(id) && nil) || id
+
     EctoWatch.unsubscribe(watcher_identifier, id)
   end
 
