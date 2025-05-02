@@ -610,12 +610,29 @@ defmodule EctoSyncTest do
   describe "many to many with join_through module" do
     test "inserted", %{person_with_posts_and_tags: person} do
       preloads = [posts: [:tags, :labels]]
-      %{posts: [post1, _post2]} = person = do_preload(person, preloads)
+      %{posts: [post1, post2]} = person = do_preload(person, preloads)
 
       subscribe(person, assocs: [posts: :tags])
 
       {:ok, tag} = TestRepo.insert(%Tag{})
       {:ok, _assoc} = TestRepo.insert(%PostsTags{post_id: post1.id, tag_id: tag.id})
+
+      person =
+        receive do
+          {{PostsTags, :inserted}, _} = sync_args ->
+            synced = EctoSync.sync(person, sync_args)
+            assert do_preload(person, preloads) == synced
+            synced
+        after
+          1000 -> raise "nothing POSTS"
+        end
+
+      {:ok, _tag} =
+        %Tag{}
+        |> Ecto.Changeset.change(%{name: "test"})
+        |> Ecto.Changeset.put_assoc(:posts, [post2])
+        |> TestRepo.insert()
+        |> do_preload([:posts])
 
       receive do
         {{PostsTags, :inserted}, _} = sync_args ->
