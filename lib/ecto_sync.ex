@@ -57,10 +57,13 @@ defmodule EctoSync do
 
   ### Options
     - `:extra_columns`, which extra columns should be included  
-    - `:assocs`, a preload like keyword list of associations to subscribe to. If assocs are specified in the options, the necessary extra_columns will be added or merged to the `:extra_columns` option. 
+    - `:assocs`, a preload like keyword list of associations to subscribe to. 
+      If assocs are specified in the options, the necessary extra_columns will be added 
+      or merged to the `:extra_columns` option. 
 
   ### Examples
   Assuming the same schemas are present as in the Use Cases page.
+
   ```elixir
   # Generate events for a schema without associations
   watchers(MyApp.User)
@@ -71,23 +74,28 @@ defmodule EctoSync do
   #    ]
 
   # Generate events for all associations
-  watchers(MyApp.User, assocs: [:comments, posts: :tags])
+  watchers(User, assocs: [posts: [:comments, :tags, :labels]])
   # => Includes events for:
   # [
-  #      {MyApp.User, :inserted, []}, {MyApp.User, :updated, []}, {MyApp.User, :deleted, []}
-  #      {MyApp.Post, :inserted, []}, {MyApp.Post, :updated, []}, {MyApp.Post, :deleted, []}
-  #      {MyApp.PostsTags, :inserted, []}, {MyApp.PostsTags, :updated, []}, {MyApp.PostsTags, :deleted, []}
-  #      {{MyApp.Tag, :updated, []}, {MyApp.Tag, :deleted, []}
-  #      {MyApp.Comment, :inserted, []}, {MyApp.Comment, :updated, []}, {MyApp.Comment, :deleted, []}
+  #   {Label, :deleted, [extra_columns: []]},
+  #   {Label, :inserted, [extra_columns: []]},
+  #   {Label, :updated, [extra_columns: []]},
+  #   {Person, :deleted, [extra_columns: []]},
+  #   {Person, :inserted, [extra_columns: []]},
+  #   {Person, :updated, [extra_columns: []]},
+  #   {Post, :deleted, [extra_columns: [:person_id]]},
+  #   {Post, :deleted, [extra_columns: [:post_id]]},
+  #   {Post, :inserted, [extra_columns: [:person_id]]},
+  #   {Post, :inserted, [extra_columns: [:post_id]]},
+  #   {Post, :updated, [extra_columns: [:person_id]]},
+  #   {Post, :updated, [extra_columns: [:post_id]]},
+  #   {PostsTags, :deleted, [extra_columns: [:tag_id, :post_id]]},
+  #   {PostsTags, :inserted, [extra_columns: [:tag_id, :post_id]]},
+  #   {PostsTags, :updated, [extra_columns: [:tag_id, :post_id]]},
+  #   {Tag, :deleted, [extra_columns: []]},
+  #   {Tag, :inserted, [extra_columns: []]},
+  #   {Tag, :updated, [extra_columns: []]}
   # ]
-
-  # Generate events with three-level deep associations, selectively including `posts` but not `comments`
-  watchers(MyApp.User, assocs: [has: [posts: [has: false]]])
-  # => Includes events for:
-  #      {MyApp.User, :inserted, []}, {MyApp.User, :updated, []}, {MyApp.User, :deleted, []}
-  #      {MyApp.Post, :inserted, []}, {MyApp.Post, :updated, []}, {MyApp.Post, :deleted, []}
-  #      (Does not include `MyApp.Comment`)
-
   ```
   """
   def watchers(watchers \\ [], schema)
