@@ -1,9 +1,7 @@
 # EctoSync
 
-**TLDR;**
-```
-Subscribe to events emitted by EctoWatch, cache the result, allow subscribers to sync.
-```
+Subscribe to events emitted by EctoWatch, and cache the changed row. Use the `sync` function
+to update an in-memory row or list of rows using the cached version. 
 
 ## Use cases
 ### Schema:
@@ -17,7 +15,10 @@ children = [
   {EctoSync,
    repo: MyRepo,
    pub_sub: MyPubSub,
-   watchers: EctoSync.all_events(Posts, assocs: true)
+   watchers: EctoSync.watchers(Posts, assocs: [:tags])
+  },
+  ...
+]
 ```
 #### PostLive.ex
 ```
@@ -33,26 +34,26 @@ def mount(params, session, socket) do
   {:ok, assign(socket, posts: posts)}
 end
 
-def handle_info({{Tag, _event}, sync_args}, socket) do
+def handle_info({{PostsTags, _event}, _} = sync_args, socket) do
   {:ok, posts} = EctoSync.sync(socket.assigns.posts, sync_args)
   {:noreply, assign(socket, posts: posts)}
 end
 ```
-1. When a Tag is updated, all posts that contain that tag  will be updated.
-2. When a Tag is inserted, the tag will automatically be added to the corresponding post.
+1. When a Tag row is updated, all posts that reference that tag will be updated.
+2. When a PostsTags row is inserted, the tag will automatically be added to the corresponding post.
 
-The tag is loaded from the database once for each event handled by EctoSync. 
+The Tag is loaded from the database once for each event handled by EctoSync. 
 The result is then cached and this cached version will be used when other processes call
 `EctoSync.sync/2` with the args provided in `handle_info`. 
 
 
-### Subscribe to insertions of assocs that can be used for row creation:
+### Subscribe to events of rows that are used as assocs:
 #### PostForm.ex
 ```
 def mount(params, session, socket) do
   tags = list_tags()
   if connected?(socket) do
-    EctoSync.subscribe_assocs(Post)
+    EctoSync.subscribe(tags)
   end
 
   {:ok, assign(socket, tags: tags)}
@@ -69,7 +70,7 @@ def render(assigns) do
   """
 end
 
-def handle_info({{Tag, _event}, sync_args}, socket) do
+def handle_info({{Tag, _event}, _} = sync_args, socket) do
   {:ok, tags} = EctoSync.sync(socket.assigns.tags, sync_args)
   {:noreply, assign(socket, tags: tags)
 end
@@ -95,9 +96,9 @@ children = [
    repo: MyRepo,
    pub_sub: MyPubSub,
    watchers:
-     EctoSync.all_events(Schema)
-     |> EctoSync.all_events(OtherSchema, assocs: :some_assocs)
-     |> EctoSync.all_events(AnotherSchema, extra_columns: [:test_id])},
+     EctoSync.watchers(Schema)
+     |> EctoSync.watchers(OtherSchema, assocs: [:some_assocs])
+     |> EctoSync.watchers(AnotherSchema, extra_columns: [:test_id])},
   ]
 ```
 
