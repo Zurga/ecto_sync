@@ -132,16 +132,18 @@ defmodule EctoSync do
 
   ### Examples
 
-  iex> defmodule Test do
-  ...>   use Ecto.Schema
-  ...>   schema do
-  ...>     field :name, :string
-  ...>   end
-  ...> end
-  iex> EctoSync.subscribe(Test)
-  [{{Test, :inserted}, nil}, {{Test, :updated}, nil}, {{Test, :deleted}, nil}]
-  iex> EctoSync.subscribe(%Test{id: 1})
-  [{{Test, :updated}, 1}, {{Test, :deleted}, 1}]
+      iex> defmodule Test do
+      ...>   use Ecto.Schema
+      ...>   schema do
+      ...>     field :name, :string
+      ...>   end
+      ...> end
+
+      iex> EctoSync.subscribe(Test)
+      [{{Test, :inserted}, nil}, {{Test, :updated}, nil}, {{Test, :deleted}, nil}]
+
+      iex> EctoSync.subscribe(%Test{id: 1})
+      [{{Test, :updated}, 1}, {{Test, :deleted}, 1}]
   """
   # @spec subscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), term(), term()) ::
   # subscriptions()
@@ -166,16 +168,29 @@ defmodule EctoSync do
   Performs the actual syncing of a given value. Based on the input and the event, certain behaviour can be expected.
 
   ## `:inserted` event
-  |event_struct|input|output|
+  |struct|input|output|
   |------------|-----|------|
   |`%Post{id: 1}`|`[]`|` [%Post{id: 1}]`|
   |`%Post{id: 2}`|`[%Post{id: 1}]`|` [%Post{id: 1}, %Post{id: 2}]`|
-  |`%Comment{id: 1, post_id: 1}`|`[%Post{id: 1, comments: []}]`|` [%Post{id: 1, comments: [%Comment{id: 1}]}]`|
+  |`%Comment{id: 1, post_id: 1}`|`[%Post{id: 1, comments: []}]`|`[%Post{id: 1, comments: [%Comment{id: 1}]}]`|
 
   ## `:updated` event
 
+  |struct|input|output|
+  |------------|-----|------|
+  |`%Post{id: 1, name: "Updated name"}`|`%Post{id:1, name: "Name"}`|`%Post{id: 1}, name: "Updated name"}`|
+  |`%Post{id: 2}`|`[%Post{id: 1}]`|`[%Post{id: 1}, %Post{id: 2}]`|
+  |`%Comment{id: 1, post_id: 1}`|`[%Post{id: 1, comments: []}]`|` [%Post{id: 1, comments: [%Comment{id: 1}]}]`|
+  |`%Comment{id: 1, post_id: 2}`|`[%Post{id: 1, comments: [%Comment{id: 1}]}, %Post{id: 2, comments: []}]`|` [%Post{id: 1, comments: []}, %Post{id: 2, comments: [%Comment{id: 1}]}]`|
 
   ## `:deleted` event
+
+  |struct|input|output|
+  |------------|-----|------|
+  |`%Post{id: 1}`|`[]`|`[]`|
+  |`%Post{id: 1}`|`%Post{id: 1}`|`%Post{id: 1}`|
+  |`%Post{id: 2}`|`[%Post{id: 1}, %Post{id: 2}]`|`[%Post{id: 1}]`|
+  |`%Comment{id: 1, post_id: 1}`|` [%Post{id: 1, comments: [%Comment{id: 1}]}]`|`[%Post{id: 1, comments: []}]`|
 
   """
   defdelegate sync(value, sync_config), to: Syncer
