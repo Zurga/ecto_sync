@@ -28,7 +28,7 @@ alias MyApp.Posts.Tag
 def mount(params, session, socket) do
   posts = list_posts(preload: [:tags])
   if connected?(socket) do
-    EctoSync.subscribe_all(Post)
+    EctoSync.subscribe(Post, assocs: [:tags])
   end
 
   {:ok, assign(socket, posts: posts)}
