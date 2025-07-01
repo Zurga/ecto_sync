@@ -35,6 +35,14 @@ defmodule EctoSyncTest do
              ] == EctoSync.watchers(Post)
     end
 
+    test "adding a label to schema" do
+      assert [
+               {Post, :inserted, [extra_columns: [], label: :my_label_inserted]},
+               {Post, :updated, [extra_columns: [], label: :my_label_updated]},
+               {Post, :deleted, [extra_columns: [], label: :my_label_deleted]}
+             ] == EctoSync.watchers(Post, label: :my_label)
+    end
+
     test ":assocs option with keyword assocs" do
       assert [
                {Label, :deleted, [extra_columns: []]},

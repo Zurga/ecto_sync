@@ -257,13 +257,16 @@ defmodule EctoSync do
 
     {columns, opts} = Keyword.pop(opts, :extra_columns, [])
 
-    extra_columns =
-      merge_extra_columns(schema, columns, assoc_fields)
+    extra_columns = merge_extra_columns(schema, columns, assoc_fields)
 
     opts = Keyword.put(opts, :extra_columns, extra_columns)
 
     watchers =
-      (watchers ++ Enum.map(@events, &{schema, &1, opts}))
+      (watchers ++
+         Enum.map(@events, fn event ->
+           opts = Keyword.replace_lazy(opts, :label, fn label -> :"#{label}_#{event}" end)
+           {schema, event, opts}
+         end))
       |> Enum.uniq()
 
     Enum.reduce(assoc_fields, watchers, fn
