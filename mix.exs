@@ -4,13 +4,23 @@ defmodule EctoSync.MixProject do
   @source "https://github.com/Zurga/EctoSync"
   def project do
     [
+      name: "EctoSync",
       app: :ecto_sync,
-      version: "0.1.0",
+      description: "Subscribe to events emitted by EctoWatch, sync variables with cached values.",
+      homepage_url: @source,
+      version: "0.1.1",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       deps: deps(),
+      package: [
+        maintainers: ["Jim Lemmers"],
+        licenses: ["MIT"],
+        links: %{
+          GitHub: @source
+        }
+      ],
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [
         coveralls: :test,
@@ -26,6 +36,7 @@ defmodule EctoSync.MixProject do
       home_page: @source,
       docs: [
         main: "EctoSync",
+        source_url: @source,
         extras: ["README.md"]
       ]
     ]
