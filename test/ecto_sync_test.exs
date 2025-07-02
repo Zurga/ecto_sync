@@ -1,6 +1,7 @@
 defmodule EctoSyncTest do
   use EctoSync.RepoCase, async: false
   import EctoSync
+  import EctoSync.Helpers
 
   @association_columns [:post_id, :label_id]
   @posts_labels_events [
@@ -28,23 +29,23 @@ defmodule EctoSyncTest do
 
   describe "watchers/3" do
     test "all events are generated" do
-      assert [
+      assert watchers_with_labels([
                {Post, :inserted, [extra_columns: []]},
                {Post, :updated, [extra_columns: []]},
                {Post, :deleted, [extra_columns: []]}
-             ] == EctoSync.watchers(Post)
+             ]) == EctoSync.watchers(Post)
     end
 
     test "adding a label to schema" do
       assert [
-               {Post, :inserted, [extra_columns: [], label: :my_label_inserted]},
-               {Post, :updated, [extra_columns: [], label: :my_label_updated]},
-               {Post, :deleted, [extra_columns: [], label: :my_label_deleted]}
+               {Post, :inserted, [label: :my_label_inserted, extra_columns: []]},
+               {Post, :updated, [label: :my_label_updated, extra_columns: []]},
+               {Post, :deleted, [label: :my_label_deleted, extra_columns: []]}
              ] == EctoSync.watchers(Post, label: :my_label)
     end
 
     test ":assocs option with keyword assocs" do
-      assert [
+      assert watchers_with_labels([
                {Label, :deleted, [extra_columns: []]},
                {Label, :inserted, [extra_columns: []]},
                {Label, :updated, [extra_columns: []]},
@@ -64,20 +65,20 @@ defmodule EctoSyncTest do
                {Tag, :inserted, [extra_columns: []]},
                {Tag, :updated, [extra_columns: []]}
                | @posts_labels_events
-             ] ==
+             ]) ==
                EctoSync.watchers(Person, assocs: [posts: [:comments, :tags, :labels]])
                |> Enum.sort()
     end
 
     test ":assocs option merges with other columns" do
-      assert [
+      assert watchers_with_labels([
                {Post, :inserted, [extra_columns: [:id, :person_id]]},
                {Post, :updated, [extra_columns: [:id, :person_id]]},
                {Post, :deleted, [extra_columns: [:id, :person_id]]},
                {Person, :inserted, [extra_columns: []]},
                {Person, :updated, [extra_columns: []]},
                {Person, :deleted, [extra_columns: []]}
-             ] == EctoSync.watchers(Post, assocs: [:person], extra_columns: [:id])
+             ]) == EctoSync.watchers(Post, assocs: [:person], extra_columns: [:id])
     end
 
     test "raises with invalid inputs" do
@@ -189,7 +190,7 @@ defmodule EctoSyncTest do
 
   describe "integrations" do
     test "subscribing with EctoWatch also works", %{person: person} do
-      EctoWatch.subscribe({Post, :inserted}, nil)
+      EctoWatch.subscribe(encode_watcher_identifier({Post, :inserted}), nil)
 
       {:ok, post} = TestRepo.insert(%Post{person_id: person.id})
 
@@ -816,5 +817,17 @@ defmodule EctoSyncTest do
         messages
         |> Enum.reverse()
     end
+  end
+
+  defp watchers_with_labels(watchers) do
+    watchers
+    |> Enum.map(fn {schema, event, opts} = watcher ->
+      if ecto_schema_mod?(schema) do
+        label = encode_watcher_identifier({schema, event})
+        {schema, event, Keyword.put(opts, :label, label)}
+      else
+        watcher
+      end
+    end)
   end
 end

@@ -7,8 +7,29 @@ defmodule EctoSync.Helpers do
 
     true
   rescue
+    ArgumentError -> false
     UndefinedFunctionError -> false
   end
+
+  def encode_watcher_identifier({schema, event}) do
+    try do
+      schema.__info__(:module)
+
+      :crypto.hash(:sha256, to_string(schema))
+      |> Base.encode32(case: :lower, padding: false)
+      |> binary_part(0, 8)
+    rescue
+      _ ->
+        schema
+    end
+    |> then(&:"#{&1}_#{event}")
+  end
+
+  def get_encoded_label(watcher_identifier),
+    do: :persistent_term.get({EctoSync, watcher_identifier}, watcher_identifier)
+
+  def get_watcher_identifier(label),
+    do: :persistent_term.get({EctoSync, label}, label)
 
   def get_schema([value | _]), do: get_schema(value)
   def get_schema(value) when is_struct(value), do: value.__struct__

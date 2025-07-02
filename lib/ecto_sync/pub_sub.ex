@@ -12,6 +12,7 @@ defmodule EctoSync.PubSub do
   @impl true
   def broadcast(adapter_name, topic, {schema_event, %{id: id}} = message, _dispatcher) do
     PG2.broadcast(adapter_name, topic, message, __MODULE__)
+    schema_event = :persistent_term.get({EctoSync, schema_event}, schema_event)
 
     pubsub =
       Module.split(adapter_name)

@@ -118,9 +118,7 @@ defmodule EctoSync do
   @doc """
   Returns a list of pids that are subscribed to the given watcher identifier.
   """
-  def subscriptions(watcher_identifier, id \\ nil) do
-    Registry.lookup(EventRegistry, {watcher_identifier, id})
-  end
+  defdelegate subscriptions(watcher_identifier, id \\ nil), to: Subscriber
 
   @doc """
   Subscribe to Ecto.Schema(s) provided. The input can be one of following:
@@ -148,21 +146,7 @@ defmodule EctoSync do
   # @spec subscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), term(), term()) ::
   # subscriptions()
   def subscribe(values), do: subscribe(values, [])
-
-  def subscribe(values, opts) when is_list(values) do
-    values
-    |> Enum.flat_map(&Subscriber.subscribe(&1, opts))
-    |> Enum.uniq()
-    |> Enum.map(fn {watcher_identifier, id} ->
-      do_subscribe(watcher_identifier, id, opts)
-    end)
-  end
-
-  def subscribe(value, opts) do
-    for {watcher_identifier, id} <- Subscriber.subscribe(value, opts) do
-      do_subscribe(watcher_identifier, id, opts)
-    end
-  end
+  defdelegate subscribe(values, opts), to: Subscriber
 
   @doc """
   Performs the actual syncing of a given value. Based on the input and the event, certain behaviour can be expected.
@@ -264,7 +248,12 @@ defmodule EctoSync do
     watchers =
       (watchers ++
          Enum.map(@events, fn event ->
-           opts = Keyword.replace_lazy(opts, :label, fn label -> :"#{label}_#{event}" end)
+           label = encode_watcher_identifier({Keyword.get(opts, :label, schema), event})
+
+           opts = Keyword.put(opts, :label, label)
+           :persistent_term.put({EctoSync, {schema, event}}, label)
+           :persistent_term.put({EctoSync, label}, {schema, event})
+           # Registry.register(LabelRegistry, {schema, event}, label)
            {schema, event, opts}
          end))
       |> Enum.uniq()
@@ -283,15 +272,6 @@ defmodule EctoSync do
       _, watchers ->
         watchers
     end)
-  end
-
-  defp do_subscribe(watcher_identifier, id, opts) do
-    if self() not in subscriptions(watcher_identifier, id) do
-      Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
-      Registry.register(EventRegistry, {watcher_identifier, id}, opts)
-      EctoWatch.subscribe(watcher_identifier, id)
-      {watcher_identifier, id}
-    end
   end
 
   defp merge_extra_columns(schema, columns, assoc_fields) do

@@ -1,4 +1,5 @@
 defmodule EctoSync.Subscriber do
+  require Logger
   @moduledoc false
   import EctoSync.Helpers
 
@@ -9,9 +10,18 @@ defmodule EctoSync.Subscriber do
 
   def subscribe(watcher_identifier_or_struct, id \\ nil)
 
+  def subscribe(values, opts) when is_list(values) do
+    values
+    |> Enum.flat_map(&subscribe(&1, opts))
+    |> Enum.uniq()
+    |> Enum.map(fn {watcher_identifier, id} ->
+      do_subscribe(watcher_identifier, id, opts)
+    end)
+  end
+
   def subscribe(schema_mod, event)
       when is_atom(schema_mod) and is_atom(event) and not is_nil(event) do
-    [{{schema_mod, event}, nil}]
+    [do_subscribe({schema_mod, event}, nil, [])]
   end
 
   def subscribe([value | _] = list, opts) when is_struct(value),
@@ -34,10 +44,29 @@ defmodule EctoSync.Subscriber do
     end)
     |> Enum.uniq()
     |> Enum.sort()
+    |> Enum.map(fn {watcher_identifier, id} -> do_subscribe(watcher_identifier, id, []) end)
   end
 
   def subscribe(watcher_identifier, id) do
-    Enum.map(subscribe_events(watcher_identifier, id), &{&1, id})
+    Enum.map(subscribe_events(watcher_identifier, id), &do_subscribe(&1, id, []))
+  end
+
+  defp do_subscribe(watcher_identifier, id, opts) do
+    encoded_identifier = get_encoded_label(watcher_identifier)
+
+    if self() not in EctoSync.subscriptions(encoded_identifier, id) do
+      Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
+      Registry.register(EventRegistry, {encoded_identifier, id}, opts)
+
+      EctoWatch.subscribe(encoded_identifier, id)
+
+      {watcher_identifier, id}
+    end
+  end
+
+  def subscriptions(watcher_identifier, id) do
+    encoded = get_encoded_label(watcher_identifier)
+    Registry.lookup(EventRegistry, {encoded, id})
   end
 
   def subscribe_events(label_or_schema, assoc \\ nil)
@@ -111,6 +140,20 @@ defmodule EctoSync.Subscriber do
 
   def unsubscribe(value, opts \\ [])
 
+  def unsubscribe(watcher_identifier, id)
+      when is_tuple(watcher_identifier) or is_atom(watcher_identifier) do
+    id = (is_list(id) && nil) || id
+
+    try do
+      watcher_identifier
+      |> get_encoded_label()
+      |> EctoWatch.unsubscribe(id)
+    catch
+      ArgumentError ->
+        raise ArgumentError, "no watcher found for #{inspect(watcher_identifier)}"
+    end
+  end
+
   def unsubscribe([value | _] = values, opts) when is_struct(value) do
     Enum.flat_map(values, &unsubscribe(&1, opts))
   end
@@ -123,15 +166,9 @@ defmodule EctoSync.Subscriber do
       end)
     )
     |> Enum.map(fn {watcher_identifier, id} = event ->
-      EctoWatch.unsubscribe(watcher_identifier, id)
+      unsubscribe(watcher_identifier, id)
       event
     end)
-  end
-
-  def unsubscribe(watcher_identifier, id) do
-    id = (is_list(id) && nil) || id
-
-    EctoWatch.unsubscribe(watcher_identifier, id)
   end
 
   defp flat_map_assocs(parent, assoc_keys, func, acc \\ [])
