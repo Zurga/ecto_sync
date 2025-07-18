@@ -145,6 +145,32 @@ defmodule EctoSyncTest do
                |> Enum.sort_by(&elem(&1, 1))
     end
 
+    test "subscribe to assocs that are not preloaded", %{
+      person_with_posts: %{posts: [post, post2]} = person
+    } do
+      assert [
+               {{Person, :deleted}, person.id},
+               {{Person, :updated}, person.id},
+               {{Post, :deleted}, post.id},
+               {{Post, :updated}, post.id},
+               {{Post, :deleted}, post2.id},
+               {{Post, :updated}, post2.id},
+               {{Post, :inserted}, {:person_id, person.id}},
+               {{PostsTags, :inserted}, {:post_id, post.id}},
+               {{PostsTags, :inserted}, {:post_id, post2.id}}
+             ] ==
+               subscribe([person], assocs: [posts: :tags])
+               |> Enum.sort_by(&elem(&1, 1))
+    end
+
+    test "no double subscribes", %{person: person} do
+      for _ <- 1..3 do
+        subscribe(person)
+      end
+
+      assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
+    end
+
     test "subscribe to label" do
       assert [{:label, []}] == subscribe(:label)
     end
@@ -623,7 +649,7 @@ defmodule EctoSyncTest do
 
       subscribe(person, assocs: [posts: :tags])
 
-      {:ok, tag} = TestRepo.insert(%Tag{})
+      {:ok, tag} = TestRepo.insert(%Tag{name: "inserted"})
       {:ok, _assoc} = TestRepo.insert(%PostsTags{post_id: post1.id, tag_id: tag.id})
 
       person =
@@ -645,9 +671,38 @@ defmodule EctoSyncTest do
 
       receive do
         {{PostsTags, :inserted}, _} = sync_args ->
-          synced = EctoSync.sync(person, sync_args)
+          synced =
+            EctoSync.sync(person, sync_args)
+
           assert do_preload(person, preloads) == synced
-          synced
+      after
+        1000 -> raise "nothing POSTS"
+      end
+    end
+
+    test "join_through is updated", %{
+      person_with_posts_and_tags: person_with_posts_and_tags,
+      person_with_posts: person_with_posts
+    } do
+      preloads = [posts: [:tags, :labels]]
+
+      %{posts: [%{tags: [from_tag | _]} | _]} =
+        person_with_posts_and_tags = do_preload(person_with_posts_and_tags, preloads)
+
+      subscribe(person_with_posts_and_tags, assocs: [posts: :tags])
+
+      from_tag
+      |> do_preload([:posts])
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:posts, [])
+      |> TestRepo.update()
+
+      receive do
+        {{PostsTags, _}, _} = sync_args ->
+          synced =
+            EctoSync.sync(person_with_posts_and_tags, sync_args)
+
+          assert do_preload(person_with_posts_and_tags, preloads) == synced
       after
         1000 -> raise "nothing POSTS"
       end
@@ -703,7 +758,7 @@ defmodule EctoSyncTest do
 
         {{Tag, :updated}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
-          assert person == synced
+          assert do_preload(person, preloads) == synced
 
         {{Tag, :inserted}, _} ->
           false
@@ -751,6 +806,20 @@ defmodule EctoSyncTest do
     end
   end
 
+  describe "subscriptions/0" do
+    test "subscriptions can be listed", %{person: person} do
+      subscribe(person)
+      assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
+    end
+
+    test "subscriptions are up to date after unsubscribing", %{person: person} do
+      subscribe(person)
+      assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
+      unsubscribe(person)
+      assert [] == subscriptions({Person, :updated}, person.id)
+    end
+  end
+
   describe "unsubscribe/1" do
     test "unsubscribe", %{
       person: person
@@ -761,7 +830,7 @@ defmodule EctoSyncTest do
         TestRepo.insert(%Post{person_id: person.id})
 
       assert length(flush()) == 1
-      EctoSync.unsubscribe(person, assocs: [:posts])
+      unsubscribe(person, assocs: [:posts])
 
       {:ok, _post} =
         TestRepo.insert(%Post{person_id: person.id})

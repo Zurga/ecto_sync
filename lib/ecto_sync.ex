@@ -22,20 +22,29 @@ defmodule EctoSync do
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
 
+  @doc """
+  Starts EctoSync. 
+
+  ## Options
+  - `:cache_name`, the name of the cache that used to cache changes
+  - `:repo`, the repo to track changes in.
+  - `:watchers`, a list of watchers that EctoSync will pass on to EctoWatch.
+  - `:pub_sub`, the PubSub module to use for sending events, defaults to `:ecto_sync_pub_sub`.
+  """
   def start_link(opts \\ [name: __MODULE__]) do
     state =
       %__MODULE__{
         cache_name: opts[:cache_name] || @cache_name,
         repo: opts[:repo],
         pub_sub: opts[:pub_sub],
-        watchers: opts[:watchers],
-        schemas: opts[:schemas]
+        watchers: opts[:watchers]
       }
 
     Supervisor.start_link(__MODULE__, state, name: __MODULE__)
   end
 
   @impl true
+  @doc false
   def init(state) do
     :persistent_term.put(SyncConfig, state)
 
@@ -143,10 +152,9 @@ defmodule EctoSync do
       iex> EctoSync.subscribe(%Test{id: 1})
       [{{Test, :updated}, 1}, {{Test, :deleted}, 1}]
   """
-  # @spec subscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), term(), term()) ::
-  # subscriptions()
-  def subscribe(values), do: subscribe(values, [])
-  defdelegate subscribe(values, opts), to: Subscriber
+  @spec subscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), list()) ::
+          list(term())
+  defdelegate subscribe(values, opts \\ []), to: Subscriber
 
   @doc """
   Performs the actual syncing of a given value. Based on the input and the event, certain behaviour can be expected.
@@ -179,7 +187,28 @@ defmodule EctoSync do
   """
   defdelegate sync(value, sync_config), to: Syncer
 
-  defdelegate unsubscribe(watcher_identifier, id), to: Subscriber
+  @doc """
+  Unsubscribe the current process from events. Possible inputs are:
+    - `Ecto.Schema` struct
+    - a list of `Ecto.Schema` structs
+    - watcher_identifier tuple and id
+
+  ### Examples
+      iex> EctoSync.unsubscribe(person)
+      :ok
+
+      iex> EctoSync.unsubscribe([person1, person2])
+      :ok
+
+      iex> EctoSync.unsubscribe({Person, :updated}, 1)
+      :ok
+      
+      iex> EctoSync.unsubscribe({Person, :inserted}, nil)
+      :ok
+  """
+  @spec unsubscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), term()) ::
+          list(term())
+  defdelegate unsubscribe(value, id \\ []), to: Subscriber
 
   defp do_watchers(
          watchers,

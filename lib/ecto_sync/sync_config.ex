@@ -11,10 +11,11 @@ defmodule EctoSync.SyncConfig do
             cache_name: nil,
             ref: nil,
             get_fun: nil,
+            assocs: nil,
             preloads: []
 
-  def new({label, {id, ref}}) when is_atom(label) do
-    {config, state} = init(id, ref)
+  def new({label, {identifiers, ref}}) when is_atom(label) do
+    {config, state} = init(identifiers, ref)
 
     {%{table_name: table, primary_key: primary_key, columns: columns}, event, _} =
       state.watchers
@@ -31,8 +32,7 @@ defmodule EctoSync.SyncConfig do
 
     %{
       config
-      | id: id,
-        schema: table,
+      | schema: table,
         event: event,
         get_fun: fn table, id ->
           filters = [{primary_key, id}]
@@ -43,19 +43,21 @@ defmodule EctoSync.SyncConfig do
     }
   end
 
-  def new({{schema, event}, {id, ref}}) do
-    {config, _} = init(id, ref)
-    %{config | id: id, schema: schema, event: event, get_fun: &config.repo.get(&1, &2)}
+  def new({{schema, event}, {identifiers, ref}}) do
+    {config, _} = init(identifiers, ref)
+    %{config | schema: schema, event: event, get_fun: &config.repo.get(&1, &2)}
   end
 
-  defp init(id, ref) do
+  defp init(%{id: id} = identifiers, ref) do
+    assocs = Map.drop(identifiers, [:id])
     %{repo: repo, cache_name: cache_name} = state = :persistent_term.get(__MODULE__)
 
     {%__MODULE__{
        id: id,
        cache_name: cache_name,
        ref: ref,
-       repo: repo
+       repo: repo,
+       assocs: assocs
      }, state}
   end
 

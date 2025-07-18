@@ -88,7 +88,17 @@ defmodule EctoSync.Syncer do
   end
 
   defp update_all(value, id, %{schema: schema, event: :deleted} = config) do
-    reduce_preloaded_assocs(value, fn {key, _info}, acc ->
+    reduce_preloaded_assocs(value, fn {key, assoc_info}, acc ->
+      {schema, id} =
+        case assoc_info do
+          %ManyToMany{related: related_schema, join_through: ^schema, join_keys: join_keys} ->
+            [_, {child_key, _}] = join_keys
+            {related_schema, Map.get(config.assocs, child_key)}
+
+          _ ->
+            {schema, id}
+        end
+
       Map.update!(acc, key, fn
         assocs when is_list(assocs) ->
           case find_by_primary_key(assocs, {schema, id}) do
@@ -238,20 +248,15 @@ defmodule EctoSync.Syncer do
     get_from_cache([preloads], config)
   end
 
-  defp resolve_assoc(
-         %ManyToMany{related: related_schema, join_through: schema, join_keys: join_keys},
-         value,
-         new,
-         %{schema: schema}
-       ) do
-    [{related_key, parent_key}, {id_key, _}] =
-      join_keys
+  defp resolve_assoc(%ManyToMany{join_through: schema} = assoc, value, new, %{schema: schema})
+       when is_map(new) do
+    [{related_key, parent_key}, {id_key, _}] = assoc.join_keys
 
     parent_id = Map.get(value, parent_key, false)
 
     child_id = Map.get(new, related_key)
 
-    {parent_id == child_id, {new, {related_schema, Map.get(new, id_key)}}}
+    {parent_id == child_id, {new, {assoc.related, Map.get(new, id_key)}}}
   end
 
   defp resolve_assoc(assoc_info, value, new, %{schema: schema}) do

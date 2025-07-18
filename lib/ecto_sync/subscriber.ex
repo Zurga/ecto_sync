@@ -1,6 +1,6 @@
 defmodule EctoSync.Subscriber do
-  require Logger
   @moduledoc false
+  require Logger
   import EctoSync.Helpers
 
   alias Ecto.Association
@@ -54,18 +54,23 @@ defmodule EctoSync.Subscriber do
   defp do_subscribe(watcher_identifier, id, opts) do
     encoded_identifier = get_encoded_label(watcher_identifier)
 
-    if self() not in EctoSync.subscriptions(encoded_identifier, id) do
+    pids =
+      EctoSync.subscriptions(watcher_identifier, id)
+      |> Enum.map(&elem(&1, 0))
+
+    if self() not in pids do
       Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
       Registry.register(EventRegistry, {encoded_identifier, id}, opts)
 
       EctoWatch.subscribe(encoded_identifier, id)
-
-      {watcher_identifier, id}
     end
+
+    {watcher_identifier, id}
   end
 
   def subscriptions(watcher_identifier, id) do
     encoded = get_encoded_label(watcher_identifier)
+
     Registry.lookup(EventRegistry, {encoded, id})
   end
 
@@ -145,9 +150,14 @@ defmodule EctoSync.Subscriber do
     id = (is_list(id) && nil) || id
 
     try do
-      watcher_identifier
-      |> get_encoded_label()
-      |> EctoWatch.unsubscribe(id)
+      encoded_identifier =
+        watcher_identifier
+        |> get_encoded_label()
+
+      case EctoWatch.unsubscribe(encoded_identifier, id) do
+        :ok -> Registry.unregister(EventRegistry, {encoded_identifier, id})
+        error -> error
+      end
     catch
       ArgumentError ->
         raise ArgumentError, "no watcher found for #{inspect(watcher_identifier)}"
@@ -206,7 +216,7 @@ defmodule EctoSync.Subscriber do
     schema =
       get_schema(parent)
 
-    assoc =
+    assoc_info =
       schema.__schema__(:association, key)
 
     parent
@@ -216,11 +226,24 @@ defmodule EctoSync.Subscriber do
         acc
 
       value when is_list(value) or not is_struct(value, Association.NotLoaded) ->
-        acc = [func.(parent, assoc) | acc]
+        acc = [func.(parent, assoc_info) | acc]
+
         flat_map_assocs(value, nested, func, acc)
 
       _ ->
-        [{{assoc.related, :inserted}, {assoc.related_key, primary_key(parent)}} | acc]
+        acc =
+          [func.(parent, nil) | acc]
+
+        {related, related_key} =
+          case assoc_info do
+            %ManyToMany{join_keys: [{related_key, _} | _], join_through: related} ->
+              {related, related_key}
+
+            %{related_key: related_key, related: related} ->
+              {related, related_key}
+          end
+
+        [{{related, :inserted}, {related_key, primary_key(parent)}} | acc]
     end
   end
 end
