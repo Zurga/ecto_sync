@@ -87,15 +87,6 @@ defmodule EctoSyncTest do
   end
 
   describe "subscribe/3" do
-    # test "subscribe to Ecto.Schema" do
-    #   assert [
-    #            {{Post, :inserted}, nil},
-    #            {{Post, :updated}, nil},
-    #            {{Post, :deleted}, nil}
-    #          ] ==
-    #            subscribe({Post, :all}, nil)
-    # end
-
     test "subscribe to Ecto.Schema struct", %{person_with_posts: %{posts: [post, post2]} = person} do
       assert [
                {{Person, :deleted}, person.id},
@@ -176,44 +167,6 @@ defmodule EctoSyncTest do
     end
   end
 
-  # describe "subscribe/1" do
-  #   test "subscribe to preloaded Ecto.Schemas",
-  #        %{
-  #          person_with_posts_and_tags:
-  #            %{posts: [%{tags: [tag]} = post1, %{labels: [label]} = post2]} = person
-  #        } do
-  #     assert [
-  #              {
-  #                :posts_labels_deleted,
-  #                {:post_id, post2.id}
-  #              },
-  #              {
-  #                :posts_labels_inserted,
-  #                {:post_id, post2.id}
-  #              },
-  #              {
-  #                :posts_labels_updated,
-  #                {:post_id, post2.id}
-  #              },
-  #              {{Label, :deleted}, label.id},
-  #              {{Label, :updated}, label.id},
-  #              {{Post, :deleted}, post1.id},
-  #              {{Post, :deleted}, post2.id},
-  #              {{Post, :inserted}, {:person_id, person.id}},
-  #              {{Post, :updated}, post1.id},
-  #              {{Post, :updated}, post2.id},
-  #              {{PostsTags, :deleted}, {:post_id, post1.id}},
-  #              {{PostsTags, :inserted}, {:post_id, post1.id}},
-  #              {{PostsTags, :updated}, {:post_id, post1.id}},
-  #              {{Tag, :deleted}, tag.id},
-  #              {{Tag, :updated}, tag.id}
-  #            ]
-  #            |> Enum.sort() ==
-  #              subscribe([person])
-  #              |> Enum.sort()
-  #   end
-  # end
-
   describe "integrations" do
     test "subscribing with EctoWatch also works", %{person: person} do
       EctoWatch.subscribe(encode_watcher_identifier({Post, :inserted}), nil)
@@ -246,18 +199,14 @@ defmodule EctoSyncTest do
         1000 ->
           raise "no inserts"
       end
+    end
 
-      {:ok, post2} = TestRepo.insert(%Post{person_id: person.id})
+    test "only one message is sent after insert", %{person: person} do
+      assert [{{Post, :inserted}, nil}] == subscribe(Post, :inserted)
 
-      receive do
-        {{Post, :inserted}, _} = sync_args ->
-          synced = EctoSync.sync(post2, sync_args)
-          assert synced == post2
-          assert [^post, ^post2] = EctoSync.sync([post], sync_args)
-      after
-        1000 ->
-          raise "no inserts"
-      end
+      {:ok, _post} = TestRepo.insert(%Post{person_id: person.id})
+
+      assert [_] = flush()
     end
 
     test "subscribe/2 to updates", %{person: person} do
@@ -314,101 +263,6 @@ defmodule EctoSyncTest do
         {{Post, :deleted}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
           assert synced == expected
-      after
-        1000 ->
-          raise "no deletes"
-      end
-    end
-
-    test "subscriptions based on assocs work", %{person: person} do
-      subscribe(person, assocs: [:posts])
-
-      {:ok, post} =
-        TestRepo.insert(%Post{person_id: person.id})
-
-      expected = do_preload(person, [:posts])
-
-      receive do
-        {{Post, :inserted}, _} = sync_args ->
-          synced = EctoSync.sync(person, sync_args)
-          assert synced == expected
-          assert EctoSync.sync([post], sync_args) == [post]
-      after
-        1000 ->
-          raise "no inserts"
-      end
-
-      {:ok, updated_post} =
-        Ecto.Changeset.change(post, %{name: "updated"})
-        |> TestRepo.update()
-
-      receive do
-        {{Post, :updated}, _} = sync_args ->
-          synced = EctoSync.sync(post, sync_args)
-          assert synced == updated_post
-      after
-        1000 ->
-          raise "no updates"
-      end
-    end
-
-    # TODO make this test more robust.
-    test "assoc has moved to other row", %{
-      person: person2,
-      person_with_posts: person1
-    } do
-      preloads = [:posts]
-
-      %{posts: [post1 | _]} = person1 = do_preload(person1, preloads)
-      person2 = do_preload(person2, preloads)
-
-      subscribe([person1, person2], assocs: [:posts])
-
-      {:ok, _} =
-        Ecto.Changeset.change(post1, %{person_id: person2.id})
-        |> TestRepo.update()
-
-      person1_expected_after_update = TestRepo.get(Person, person1.id) |> do_preload(preloads)
-
-      person2_expected_after_update = TestRepo.get(Person, person2.id) |> do_preload(preloads)
-
-      receive do
-        {{Post, :updated}, _} = sync_args ->
-          synced = EctoSync.sync(person1, sync_args)
-          assert person1_expected_after_update == synced
-
-          synced = EctoSync.sync(person2, sync_args)
-          assert person2_expected_after_update == synced
-      after
-        1000 -> raise "no updates for person1"
-      end
-
-      # receive do
-      #   {{Post, :inserted}, _} = sync_args ->
-      #     synced = EctoSync.sync(person2, sync_args)
-      #     assert person2_expected_after_update == synced
-      # after
-      #   1000 -> raise "no updates for person2"
-      # end
-    end
-
-    test "assoc has been deleted", %{person_with_posts: person1} do
-      preloads = [:posts]
-
-      %{posts: [_case1, post2]} = person1 = do_preload(person1, preloads)
-
-      subscribe(person1, assocs: [:posts])
-
-      {:ok, _} = TestRepo.delete(post2)
-
-      expected_after_delete =
-        TestRepo.get(Person, person1.id)
-        |> do_preload(preloads)
-
-      receive do
-        {{Post, :deleted}, _} = sync_args ->
-          synced = EctoSync.sync(person1, sync_args)
-          assert expected_after_delete == synced
       after
         1000 ->
           raise "no deletes"
@@ -584,10 +438,10 @@ defmodule EctoSyncTest do
     end
   end
 
+  @preloads [posts: [:tags, :labels]]
   describe "has_many" do
     test "inserted", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      person = do_preload(person, preloads)
+      person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [posts: [:tags, :labels]])
 
@@ -596,7 +450,7 @@ defmodule EctoSyncTest do
       receive do
         {{Post, :inserted}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
-          assert do_preload(person, preloads) == synced
+          assert do_preload(person, @preloads) == synced
           synced
       after
         1000 -> raise "nothing POSTS"
@@ -604,8 +458,7 @@ defmodule EctoSyncTest do
     end
 
     test "updated", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      %{posts: [post1 | _]} = person = do_preload(person, preloads)
+      %{posts: [post1 | _]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [:posts])
 
@@ -616,7 +469,7 @@ defmodule EctoSyncTest do
       receive do
         {{Post, :updated}, _} = sync_args ->
           %{posts: synced_posts} = EctoSync.sync(person, sync_args)
-          %{posts: preloaded_posts} = do_preload(person, preloads)
+          %{posts: preloaded_posts} = do_preload(person, @preloads)
           assert preloaded_posts |> Enum.sort() == synced_posts |> Enum.sort()
       after
         1000 -> raise "no post update"
@@ -624,8 +477,7 @@ defmodule EctoSyncTest do
     end
 
     test "deleted", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      %{posts: [post1 | _]} = person = do_preload(person, preloads)
+      %{posts: [post1 | _]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [:posts])
 
@@ -634,18 +486,48 @@ defmodule EctoSyncTest do
       receive do
         {{Post, :deleted}, _} = sync_args ->
           %{posts: synced_posts} = EctoSync.sync(person, sync_args)
-          %{posts: preloaded_posts} = do_preload(person, preloads)
+          %{posts: preloaded_posts} = do_preload(person, @preloads)
           assert preloaded_posts |> Enum.sort() == synced_posts |> Enum.sort()
       after
         1000 -> raise "no post update"
+      end
+    end
+
+    test "assoc has moved to other row", %{
+      person: person2,
+      person_with_posts: person1
+    } do
+      preloads = [:posts]
+
+      %{posts: [post1 | _]} = person1 = do_preload(person1, preloads)
+      person2 = do_preload(person2, preloads)
+
+      subscribe([person1, person2], assocs: [:posts])
+
+      {:ok, _} =
+        Ecto.Changeset.change(post1, %{person_id: person2.id})
+        |> TestRepo.update()
+
+      person1_expected_after_update = TestRepo.get(Person, person1.id) |> do_preload(preloads)
+
+      person2_expected_after_update = TestRepo.get(Person, person2.id) |> do_preload(preloads)
+
+      receive do
+        {{Post, :updated}, _} = sync_args ->
+          synced = EctoSync.sync(person1, sync_args)
+          assert person1_expected_after_update == synced
+
+          synced = EctoSync.sync(person2, sync_args)
+          assert person2_expected_after_update == synced
+      after
+        1000 -> raise "no updates for person1"
       end
     end
   end
 
   describe "many to many with join_through module" do
     test "inserted", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      %{posts: [post1, post2]} = person = do_preload(person, preloads)
+      %{posts: [post1, post2]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [posts: :tags])
 
@@ -656,7 +538,7 @@ defmodule EctoSyncTest do
         receive do
           {{PostsTags, :inserted}, _} = sync_args ->
             synced = EctoSync.sync(person, sync_args)
-            assert do_preload(person, preloads) == synced
+            assert do_preload(person, @preloads) == synced
             synced
         after
           1000 -> raise "nothing POSTS"
@@ -674,22 +556,16 @@ defmodule EctoSyncTest do
           synced =
             EctoSync.sync(person, sync_args)
 
-          assert do_preload(person, preloads) == synced
+          assert do_preload(person, @preloads) == synced
       after
         1000 -> raise "nothing POSTS"
       end
     end
 
-    test "join_through is updated", %{
-      person_with_posts_and_tags: person_with_posts_and_tags,
-      person_with_posts: person_with_posts
-    } do
-      preloads = [posts: [:tags, :labels]]
+    test "join_through is updated", %{person_with_posts_and_tags: person} do
+      %{posts: [%{tags: [from_tag | _]} | _]} = person = do_preload(person, @preloads)
 
-      %{posts: [%{tags: [from_tag | _]} | _]} =
-        person_with_posts_and_tags = do_preload(person_with_posts_and_tags, preloads)
-
-      subscribe(person_with_posts_and_tags, assocs: [posts: :tags])
+      subscribe(person, assocs: [posts: :tags])
 
       from_tag
       |> do_preload([:posts])
@@ -699,18 +575,16 @@ defmodule EctoSyncTest do
 
       receive do
         {{PostsTags, _}, _} = sync_args ->
-          synced =
-            EctoSync.sync(person_with_posts_and_tags, sync_args)
+          synced = EctoSync.sync(person, sync_args)
 
-          assert do_preload(person_with_posts_and_tags, preloads) == synced
+          assert do_preload(person, @preloads) == synced
       after
         1000 -> raise "nothing POSTS"
       end
     end
 
     test "updated", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      %{posts: [%{tags: [tag]}, _post2]} = person = do_preload(person, preloads)
+      %{posts: [%{tags: [tag]}, _post2]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [posts: :tags])
 
@@ -728,15 +602,14 @@ defmodule EctoSyncTest do
       receive do
         {{Tag, :updated}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
-          assert do_preload(person, preloads) == synced
+          assert do_preload(person, @preloads) == synced
       after
         1000 -> raise "no tag update"
       end
     end
 
     test "updated subscribe_assocs", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      %{posts: [%{tags: [tag]}, _post2]} = person = do_preload(person, preloads)
+      %{posts: [%{tags: [tag]}, _post2]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [posts: :tags])
 
@@ -754,11 +627,11 @@ defmodule EctoSyncTest do
       |> Enum.each(fn
         {{Tag, :updated}, {^tag_id, _}} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
-          assert do_preload(person, preloads) == synced
+          assert do_preload(person, @preloads) == synced
 
         {{Tag, :updated}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
-          assert do_preload(person, preloads) == synced
+          assert do_preload(person, @preloads) == synced
 
         {{Tag, :inserted}, _} ->
           false
@@ -769,8 +642,7 @@ defmodule EctoSyncTest do
     end
 
     test "deleted", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      %{posts: [%{tags: [tag]}, _post2]} = person = do_preload(person, preloads)
+      %{posts: [%{tags: [tag]}, _post2]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [posts: :tags])
       TestRepo.delete(tag)
@@ -778,15 +650,14 @@ defmodule EctoSyncTest do
       receive do
         {{Tag, :deleted}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
-          assert do_preload(person, preloads) == synced
+          assert do_preload(person, @preloads) == synced
       after
         1000 -> raise "no tag delete"
       end
     end
 
     test "inserted with join_through table", %{person_with_posts_and_tags: person} do
-      preloads = [posts: [:tags, :labels]]
-      %{posts: [_post1, post2]} = person = do_preload(person, preloads)
+      %{posts: [_post1, post2]} = person = do_preload(person, @preloads)
 
       {:ok, label} = TestRepo.insert(%Label{name: "new label"})
 
@@ -799,7 +670,7 @@ defmodule EctoSyncTest do
       receive do
         sync_args ->
           synced = EctoSync.sync(person, sync_args)
-          assert do_preload(person, preloads) == synced
+          assert do_preload(person, @preloads) == synced
       after
         1000 -> raise "nothing POSTS"
       end
