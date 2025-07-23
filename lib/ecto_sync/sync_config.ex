@@ -12,7 +12,9 @@ defmodule EctoSync.SyncConfig do
             ref: nil,
             get_fun: nil,
             assocs: nil,
-            preloads: []
+            preloads: [],
+            graph: nil,
+            join_modules: nil
 
   def new({label, {identifiers, ref}}) when is_atom(label) do
     {config, state} = init(identifiers, ref)
@@ -50,14 +52,18 @@ defmodule EctoSync.SyncConfig do
 
   defp init(%{id: id} = identifiers, ref) do
     assocs = Map.drop(identifiers, [:id])
-    %{repo: repo, cache_name: cache_name} = state = :persistent_term.get(__MODULE__)
+
+    %{repo: repo, cache_name: cache_name, graph: graph, join_modules: join_modules} =
+      state = :persistent_term.get(__MODULE__)
 
     {%__MODULE__{
        id: id,
        cache_name: cache_name,
        ref: ref,
        repo: repo,
-       assocs: assocs
+       assocs: assocs,
+       graph: graph,
+       join_modules: join_modules
      }, state}
   end
 

@@ -14,7 +14,9 @@ defmodule EctoSync do
             repo: nil,
             cache_name: nil,
             watchers: [],
-            schemas: []
+            schemas: [],
+            graph: nil,
+            join_modules: nil
 
   use Supervisor
   require Logger
@@ -46,7 +48,64 @@ defmodule EctoSync do
   @impl true
   @doc false
   def init(state) do
-    :persistent_term.put(SyncConfig, state)
+    for {module, _, _} when is_atom(module) <- state.watchers do
+      module
+    end
+    |> Enum.uniq()
+    |> EctoSync.Graph.new([:associations])
+    |> then(fn %{edges: edges} ->
+      join_modules =
+        Enum.flat_map(edges, fn
+          %{via: {_, nil}} -> []
+          %{via: {_, module}} -> [module]
+        end)
+
+      module_edges =
+        edges
+        |> Enum.flat_map(fn %{
+                              from: {_, from, _},
+                              to: {_, to, _},
+                              via: {field, module}
+                            } = edge ->
+          cond do
+            module in join_modules ->
+              IO.inspect({from, to}, label: "#{field} -> ")
+
+              IO.inspect({from, module}, label: "#{to} -> ")
+              IO.inspect({to, module}, label: "#{from} -> ")
+              :persistent_term.put({from, module}, to)
+              :persistent_term.put({to, module}, from)
+
+              :persistent_term.put(
+                {EctoSync.Graph, {from, module}},
+                field
+              )
+
+              :persistent_term.put(
+                {EctoSync.Graph, {from, to}},
+                field
+              )
+
+            true ->
+              :persistent_term.put(
+                {EctoSync.Graph, {from, to}},
+                field
+              )
+          end
+
+          if is_nil(module) do
+            [{from, to}]
+          else
+            [{from, module}]
+          end
+        end)
+
+      graph =
+        Graph.new()
+        |> Graph.add_edges(module_edges)
+
+      :persistent_term.put(SyncConfig, %{state | graph: graph, join_modules: join_modules})
+    end)
 
     children = [
       {Cachex, state.cache_name},

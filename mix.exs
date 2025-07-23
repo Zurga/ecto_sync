@@ -35,7 +35,7 @@ defmodule EctoSync.MixProject do
       source_url: @source,
       home_page: @source,
       docs: [
-        main: "EctoSync",
+        main: "readme",
         source_url: @source,
         extras: ["README.md"]
       ]
@@ -57,6 +57,7 @@ defmodule EctoSync.MixProject do
     [
       {:ecto_watch, "~> 0.13.0"},
       {:cachex, "~> 4.0.3"},
+      {:libgraph, "~> 0.16.0"},
       {:ex_doc, "~> 0.37.2", only: :dev, runtime: false},
       {:credo, "~> 1.6", runtime: false, only: [:dev, :test]},
       {:dialyxir, "~> 1.2", runtime: false, only: [:dev, :test]},
