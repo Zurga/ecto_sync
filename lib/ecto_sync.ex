@@ -45,108 +45,22 @@ defmodule EctoSync do
     Supervisor.start_link(__MODULE__, state, name: __MODULE__)
   end
 
-  defp persistent_put(acc, key, value) do
-    case Map.get(acc, key, nil) do
-      nil ->
-        Map.put(acc, key, [value])
-
-      current ->
-        if value not in current do
-          Map.put(acc, key, List.flatten([value | current]))
-        else
-          current
-        end
-    end
-  end
-
   @impl true
   @doc false
   def init(state) do
-    for {module, _, _} when is_atom(module) <- state.watchers do
-      module
-    end
-    |> Enum.uniq()
-    |> EctoSync.Graph.new([:associations])
-    |> then(fn %{edges: edges} ->
-      join_modules =
-        Enum.flat_map(edges, fn
-          %{via: {_, nil}} -> []
-          %{via: {_, module}} -> [module]
-        end)
+    {vertex_pairs, join_modules} =
+      state.watchers
+      |> Enum.map(fn
+        {%{table_name: table}, _, _} ->
+          table
 
-      {module_edges, fields} =
-        edges
-        |> Enum.reduce({[], %{}}, fn %{from: {_, from, _}, to: {_, to, _}, via: {field, module}},
-                                     {mod_acc, field_acc} ->
-          field_acc =
-            cond do
-              module in join_modules ->
-                persistent_put(field_acc, {from, module}, to)
-                persistent_put(field_acc, {to, module}, from)
+        tuple ->
+          elem(tuple, 0)
+      end)
+      |> Enum.uniq()
+      |> EctoSync.Graph.new([:associations])
 
-                persistent_put(
-                  field_acc,
-                  {from, module},
-                  field
-                )
-
-                persistent_put(field_acc, {from, to}, field)
-
-              true ->
-                persistent_put(field_acc, {from, to}, field)
-            end
-
-          mod_acc = [
-            if is_nil(module) do
-              {from, to}
-            else
-              {from, module}
-            end
-            | mod_acc
-          ]
-
-          {mod_acc, field_acc}
-        end)
-
-      graph =
-        Graph.new()
-        |> Graph.add_edges(module_edges)
-
-      fields
-      |> IO.inspect(label: :graph)
-
-      for v <- Graph.vertices(graph), v2 <- Graph.vertices(graph), reduce: %{} do
-        acc ->
-          if v != v2 and v not in join_modules and v2 not in join_modules and
-               Graph.get_shortest_path(graph, v, v2) do
-            IO.puts("\n")
-            IO.puts("#{v} -> #{v2}")
-
-            paths =
-              Graph.get_paths(graph, v, v2)
-              |> Enum.flat_map(fn path ->
-                path
-                |> IO.inspect(label: :doing)
-
-                match_slice(
-                  path,
-                  join_modules,
-                  &Map.get(fields, &1),
-                  []
-                )
-                |> List.flatten()
-                |> IO.inspect(label: :path)
-              end)
-
-            Map.put(acc, {v, v2}, paths)
-          else
-            acc
-          end
-      end
-      |> IO.inspect()
-
-      :persistent_term.put(SyncConfig, %{state | graph: graph, join_modules: join_modules})
-    end)
+    :persistent_term.put(SyncConfig, %{state | graph: vertex_pairs, join_modules: join_modules})
 
     children = [
       {Cachex, state.cache_name},
@@ -156,38 +70,6 @@ defmodule EctoSync do
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
-  end
-
-  defp match_slice([_], _, _, acc) do
-    acc |> Enum.reverse()
-  end
-
-  defp match_slice([parent, join], join_modules, fun, acc) do
-    child =
-      if Enum.member?(join_modules, join) do
-        :persistent_term.get({parent, join})
-      else
-        join
-      end
-
-    fun.({parent, child})
-    |> Enum.reduce(acc, &Keyword.put(&2, &1, []))
-  end
-
-  defp match_slice([parent, join, child | rest] = path, join_modules, fun, acc)
-       when is_atom(join) do
-    if Enum.member?(join_modules, join) do
-      Keyword.put(
-        acc,
-        fun.({parent, child}) |> Enum.at(0),
-        match_slice([child | rest], join_modules, fun, [])
-      )
-    else
-      for field <- fun.({parent, join}) do
-        # fav, posts
-        Keyword.put(acc, field, match_slice([join, child | rest], join_modules, fun, []))
-      end
-    end
   end
 
   @spec watchers(list(), module(), list()) :: list()
