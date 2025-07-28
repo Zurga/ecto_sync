@@ -70,27 +70,8 @@ defmodule EctoSync.Syncer do
   #   update_all(value, new, config)
   # end
 
-  defp match_slice([_], _, _) do
+  defp path_to(from, to, config) do
     []
-  end
-
-  defp match_slice([parent, join], join_modules, fun) do
-    child =
-      if Enum.member?(join_modules, join) do
-        :persistent_term.get({parent, join})
-      else
-        join
-      end
-
-    [fun.({parent, child})]
-  end
-
-  defp match_slice([parent, join, child | rest], join_modules, fun) when is_atom(join) do
-    if Enum.member?(join_modules, join) do
-      [fun.({parent, child}) | match_slice([child | rest], join_modules, fun)]
-    else
-      [fun.({parent, join}) | match_slice([join, child | rest], join_modules, fun)]
-    end
   end
 
   defp do_sync(
@@ -99,25 +80,7 @@ defmodule EctoSync.Syncer do
          config
        ) do
     # if new_schema != value_schema do
-    paths =
-      Graph.get_paths(config.graph, value_schema, new_schema)
-      |> Enum.map(fn path ->
-        match_slice(
-          path,
-          config.join_modules,
-          &:persistent_term.get({EctoSync.Graph, &1})
-        )
-
-        # path
-        # |> IO.inspect(label: :"full path #{value_schema} -> #{new_schema}")
-        # |> Enum.zip(Enum.slice(path, 1..-1//1))
-        # |> Enum.map(
-        #   &:persistent_term.get({EctoSync.Graph, &1} |> IO.inspect(label: :getting))
-        # )
-      end)
-      |> Enum.uniq()
-      # end
-      |> IO.inspect(label: :"paths #{value_schema} -> #{new_schema}")
+    paths = path_to(value_schema, new_schema, config)
 
     if same_record?(value, new) do
       get_preloaded(value_schema, new.id, find_preloads(value), config)

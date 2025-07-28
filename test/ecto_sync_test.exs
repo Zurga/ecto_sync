@@ -459,7 +459,7 @@ defmodule EctoSyncTest do
 
       receive do
         {{Post, :updated}, _} = sync_args ->
-          %{posts: synced_posts} = EctoSync.sync(person, sync_args)
+          %{posts: synced_posts} = EctoSync.sync(post1, sync_args)
           %{posts: preloaded_posts} = do_preload(person, @preloads)
           assert preloaded_posts |> Enum.sort() == synced_posts |> Enum.sort()
       after

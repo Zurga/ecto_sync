@@ -171,6 +171,12 @@ defmodule EctoSync.Graph do
           assoc_types: [has: :many],
           via: {field, join_through}
         })
+        # Edge.new(%{
+        #   to: {owner.__schema__(:source), owner, {:field, owner_pk}},
+        #   from: {join_source, related, {:field, join_source_owner_fk}},
+        #   assoc_types: [has: :many],
+        #   via: {field, join_through}
+        # })
       ]
     end
   end
