@@ -1,21 +1,18 @@
 defmodule EctoSync.Syncer do
   @moduledoc false
   alias EctoSync.SyncConfig
-  alias Ecto.Schema
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
 
-  @spec sync(
-          atom() | Schema.t() | list(Schema.t()),
-          {{struct(), atom()}, {integer() | String.t(), reference()}}
-        ) :: Schema.t() | term()
-  def sync(:cached, {{_, :deleted}, _} = event) do
+  def sync(from_cache_or_value, event, opts \\ [])
+
+  def sync(:cached, {{_, :deleted}, _} = event, _opts) do
     event
     |> SyncConfig.new()
     |> do_unsubscribe()
   end
 
-  def sync(:cached, {{_, :inserted}, _} = event) do
+  def sync(:cached, {{_, :inserted}, _} = event, _opts) do
     value =
       event
       |> SyncConfig.new()
@@ -25,15 +22,15 @@ defmodule EctoSync.Syncer do
     value
   end
 
-  def sync(:cached, event), do: SyncConfig.new(event) |> get_from_cache()
+  def sync(:cached, event, _opts), do: SyncConfig.new(event) |> get_from_cache()
 
-  def sync(value_or_values, {{_, :deleted}, _} = event) do
+  def sync(value_or_values, {{_, :deleted}, _} = event, _opts) do
     config = SyncConfig.new(event)
     do_unsubscribe(config)
     do_sync(value_or_values, config.id, config)
   end
 
-  def sync(value_or_values, event) do
+  def sync(value_or_values, event, _opts) do
     config = SyncConfig.new(event)
     new = get_from_cache(config)
 

@@ -21,6 +21,7 @@ defmodule EctoSync do
   use Supervisor
   require Logger
   alias EctoSync.{PubSub, Subscriber, SyncConfig, Syncer}
+
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
 
@@ -199,7 +200,10 @@ defmodule EctoSync do
   |`%Comment{id: 1, post_id: 1}`|` [%Post{id: 1, comments: [%Comment{id: 1}]}]`|`[%Post{id: 1, comments: []}]`|
 
   """
-  defdelegate sync(value, sync_config), to: Syncer
+  @type syncable() :: term() | Ecto.Schema.t() | list(Ecto.Schema.t())
+  @spec sync(syncable(), {{struct(), atom()}, {integer() | String.t(), reference()}}) ::
+          syncable()
+  defdelegate sync(value, sync_config, opts \\ []), to: Syncer
 
   @doc """
   Unsubscribe the current process from events. Possible inputs are:
