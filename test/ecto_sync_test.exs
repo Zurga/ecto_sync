@@ -179,7 +179,7 @@ defmodule EctoSyncTest do
           assert synced == post
           assert [^post] = EctoSync.sync([], sync_args)
       after
-        500 ->
+        200 ->
           raise "no inserts"
       end
     end
@@ -196,7 +196,7 @@ defmodule EctoSyncTest do
           assert [^post] = EctoSync.sync([], sync_args)
           assert ^post = EctoSync.sync(nil, sync_args)
       after
-        500 ->
+        200 ->
           raise "no inserts"
       end
     end
@@ -225,8 +225,13 @@ defmodule EctoSyncTest do
         {{Post, :updated}, _} = sync_args ->
           synced = EctoSync.sync(post, sync_args)
           assert synced == updated
+          assert [%{}] == EctoSync.sync([%{}], sync_args)
+          assert %{} == EctoSync.sync(%{}, sync_args)
+          assert nil == EctoSync.sync(nil, sync_args)
+          assert "" == EctoSync.sync("", sync_args)
+          assert 9 == EctoSync.sync(9, sync_args)
       after
-        500 ->
+        200 ->
           raise "no updates"
       end
     end
@@ -255,7 +260,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person, sync_args)
           assert synced == expected
       after
-        500 ->
+        200 ->
           raise "no deletes"
       end
     end
@@ -283,7 +288,7 @@ defmodule EctoSyncTest do
             assert sort.(s.posts) == sort.(expected.posts)
           end
       after
-        500 -> raise "no updates"
+        200 -> raise "no updates"
       end
     end
 
@@ -308,7 +313,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person1, sync_args)
           assert person1_expected_after_update == synced
       after
-        500 -> raise "no updates for update1"
+        200 -> raise "no updates for update1"
       end
 
       {:ok, _} =
@@ -323,7 +328,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person1_expected_after_update, sync_args)
           assert person1_expected_after_update_2 == synced
       after
-        500 -> raise "no updates for update2"
+        200 -> raise "no updates for update2"
       end
     end
   end
@@ -347,7 +352,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(post, sync_args)
           assert expected == synced
       after
-        500 -> raise "no update"
+        200 -> raise "no update"
       end
     end
 
@@ -367,7 +372,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(post1, sync_args)
           assert do_preload(post1, preloads) == synced
       after
-        500 -> raise "no post update"
+        200 -> raise "no post update"
       end
 
       refute_received({{Person, :updated}, _})
@@ -395,7 +400,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(post1, sync_args)
           assert do_preload(post1, preloads) == synced
       after
-        500 -> raise "no person update"
+        200 -> raise "no person update"
       end
 
       refute_received({{Person, :updated}, _})
@@ -422,7 +427,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(post1, sync_args)
           assert preloaded == synced
       after
-        500 -> raise "no post update"
+        200 -> raise "no post update"
       end
 
       refute_received({{Person, :updated}, _})
@@ -444,7 +449,7 @@ defmodule EctoSyncTest do
           assert do_preload(person, @preloads) == synced
           synced
       after
-        500 -> raise "nothing POSTS"
+        200 -> raise "nothing POSTS"
       end
     end
 
@@ -463,7 +468,7 @@ defmodule EctoSyncTest do
           %{posts: preloaded_posts} = do_preload(person, @preloads)
           assert preloaded_posts |> Enum.sort() == synced_posts |> Enum.sort()
       after
-        500 -> raise "no post update"
+        200 -> raise "no post update"
       end
     end
 
@@ -480,7 +485,7 @@ defmodule EctoSyncTest do
           %{posts: preloaded_posts} = do_preload(person, @preloads)
           assert preloaded_posts |> Enum.sort() == synced_posts |> Enum.sort()
       after
-        500 -> raise "no post update"
+        200 -> raise "no post update"
       end
     end
 
@@ -511,7 +516,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person2, sync_args)
           assert person2_expected_after_update == synced
       after
-        500 -> raise "no updates for person1"
+        200 -> raise "no updates for person1"
       end
     end
   end
@@ -535,7 +540,7 @@ defmodule EctoSyncTest do
             assert do_preload(person, @preloads) == synced
             synced
         after
-          500 -> raise "nothing POSTS"
+          200 -> raise "nothing POSTS"
         end
 
       {:ok, _tag} =
@@ -552,7 +557,7 @@ defmodule EctoSyncTest do
 
           assert do_preload(person, @preloads) == synced
       after
-        500 -> raise "nothing POSTS"
+        200 -> raise "nothing POSTS"
       end
     end
 
@@ -573,7 +578,7 @@ defmodule EctoSyncTest do
 
           assert do_preload(person, @preloads) == synced
       after
-        500 -> raise "nothing POSTS"
+        200 -> raise "nothing POSTS"
       end
     end
 
@@ -598,7 +603,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
-        500 -> raise "no tag update"
+        200 -> raise "no tag update"
       end
     end
 
@@ -646,7 +651,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
-        500 -> raise "no tag delete"
+        200 -> raise "no tag delete"
       end
     end
 
@@ -663,11 +668,10 @@ defmodule EctoSyncTest do
 
       receive do
         sync_args ->
-          IO.inspect(sync_args)
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
-        500 -> raise "nothing POSTS"
+        200 -> raise "nothing POSTS"
       end
     end
   end
@@ -754,7 +758,7 @@ defmodule EctoSyncTest do
     receive do
       message -> flush([message | messages])
     after
-      500 ->
+      200 ->
         messages
         |> Enum.reverse()
     end

@@ -40,7 +40,7 @@ defmodule EctoSync.Syncer do
     do_sync(value_or_values, new, config)
   end
 
-  defp do_sync(nil, new, _config), do: new
+  defp do_sync(nil, new, %{event: :inserted}), do: new
 
   defp do_sync([], new, %{event: :inserted}) do
     [new]
@@ -54,7 +54,8 @@ defmodule EctoSync.Syncer do
          %{__struct__: value_schema} = value,
          %{__struct__: new_schema} = new,
          config
-       ) do
+       )
+       when is_struct(value) do
     if same_record?(value, new) do
       get_preloaded(value_schema, config.id, find_preloads(value), config)
     else
@@ -66,10 +67,10 @@ defmodule EctoSync.Syncer do
     end
   end
 
-  defp do_sync(value, new, %{schema: schema} = config) do
+  defp do_sync(%{__struct__: value_schema} = value, new, %{schema: schema} = config) do
     case Map.get(config.join_modules, schema) do
       nil ->
-        paths = path_to(value.__struct__, schema, config)
+        paths = path_to(value_schema, schema, config)
 
         Enum.reduce(paths, value, fn path, acc ->
           deep_update(acc, path, new, config)
@@ -83,6 +84,10 @@ defmodule EctoSync.Syncer do
           do_sync(acc, record, config)
         end)
     end
+  end
+
+  defp do_sync(value, _new, _config) do
+    value
   end
 
   defp deep_update(%Ecto.Association.NotLoaded{} = not_loaded, _, _, _) do
