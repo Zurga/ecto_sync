@@ -1,9 +1,7 @@
 defmodule EctoSync.Graph do
   @moduledoc false
   import EctoSync.Helpers, only: [ecto_schema_mod?: 1]
-  defstruct [:edges, :nodes]
   require Logger
-  @type t :: %__MODULE__{}
 
   def new(modules) do
     assocs =
@@ -38,7 +36,7 @@ defmodule EctoSync.Graph do
       end)
       |> Enum.into(%{})
 
-    {module_edges, fields} =
+    {edges, edge_fields} =
       assocs
       |> Enum.reduce(
         {[], %{}},
@@ -62,7 +60,7 @@ defmodule EctoSync.Graph do
 
     graph =
       Graph.new()
-      |> Graph.add_edges(module_edges)
+      |> Graph.add_edges(edges)
 
     vertices = Graph.vertices(graph)
 
@@ -72,15 +70,7 @@ defmodule EctoSync.Graph do
           if v != v2 and not is_nil(Graph.get_shortest_path(graph, v, v2)) do
             paths =
               Graph.get_paths(graph, v, v2)
-              |> Enum.flat_map(fn path ->
-                match_slice(
-                  path,
-                  join_modules,
-                  &Map.get(fields, &1),
-                  []
-                )
-                |> List.flatten()
-              end)
+              |> Enum.flat_map(&normalize_path(&1, join_modules, edge_fields, []))
 
             Map.put(acc, {v, v2}, paths)
           else
@@ -91,11 +81,11 @@ defmodule EctoSync.Graph do
     {vertex_pairs, join_modules}
   end
 
-  defp match_slice([_], _, _, acc) do
-    acc |> Enum.reverse()
+  defp normalize_path([_], _, _, acc) do
+    acc |> Enum.reverse() |> List.flatten()
   end
 
-  defp match_slice([parent, child], join_modules, fun, acc) do
+  defp normalize_path([parent, child], join_modules, edge_fields, acc) do
     child =
       (get_in(join_modules, [child, parent]) || child)
       |> case do
@@ -103,23 +93,24 @@ defmodule EctoSync.Graph do
         child -> child
       end
 
-    fun.({parent, child})
+    Map.get(edge_fields, {parent, child})
     |> Enum.reduce(acc, &Keyword.put(&2, &1, []))
   end
 
-  defp match_slice([parent, join, child | rest], join_modules, fun, acc)
+  defp normalize_path([parent, join, child | rest], join_modules, edge_fields, acc)
        when is_atom(join) do
-    if Enum.member?(Map.keys(join_modules), join) do
-      Keyword.put(
-        acc,
-        fun.({parent, child}) |> Enum.at(0),
-        match_slice([child | rest], join_modules, fun, [])
-      )
-    else
-      for field <- fun.({parent, join}) do
-        # fav, posts
-        Keyword.put(acc, field, match_slice([join, child | rest], join_modules, fun, []))
+    {edge, next} =
+      if Enum.member?(Map.keys(join_modules), join) do
+        {{parent, child}, [child | rest]}
+      else
+        {{parent, join}, [join, child | rest]}
       end
+
+    fields = Map.get(edge_fields, edge)
+
+    for field <- fields do
+      # fav, posts
+      Keyword.put(acc, field, normalize_path(next, join_modules, edge_fields, []))
     end
   end
 end

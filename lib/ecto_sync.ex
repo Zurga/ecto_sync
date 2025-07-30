@@ -58,7 +58,7 @@ defmodule EctoSync do
           elem(tuple, 0)
       end)
       |> Enum.uniq()
-      |> EctoSync.Graph.new([:associations])
+      |> EctoSync.Graph.new()
 
     :persistent_term.put(SyncConfig, %{state | graph: vertex_pairs, join_modules: join_modules})
 
