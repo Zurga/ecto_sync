@@ -1,6 +1,6 @@
 defmodule EctoSync.Helpers do
   @moduledoc false
-  alias EctoSync.SyncConfig
+  alias EctoSync.Config
 
   def ecto_schema_mod?(schema_mod) do
     schema_mod.__schema__(:fields)
@@ -35,7 +35,7 @@ defmodule EctoSync.Helpers do
   def get_schema(value) when is_struct(value), do: value.__struct__
   def get_schema(_), do: nil
 
-  def find_preloads([value | _]), do: find_preloads(value)
+  def find_preloads([value | _]) when is_struct(value), do: find_preloads(value)
 
   def find_preloads(value) when is_struct(value) do
     reduce_preloaded_assocs(value, [], fn {key, _}, acc ->
@@ -55,20 +55,28 @@ defmodule EctoSync.Helpers do
     end)
   end
 
-  def get_from_cache(key \\ [], %SyncConfig{
+  def find_preloads(preloads), do: preloads
+
+  def get_from_cache(%Config{
+        repo: repo,
         ref: ref,
         cache_name: cache_name,
         id: id,
         schema: schema,
-        get_fun: get_fun
+        get_fun: get_fun,
+        preloads: preloads
       }) do
+    preloads = Map.get(preloads || %{}, schema, [])
+
     key =
-      List.to_tuple([schema, id] ++ key ++ [ref])
+      List.to_tuple([schema, id] ++ [ref] ++ [preloads])
 
     {_, value} =
       Cachex.fetch(cache_name, key, fn _key ->
-        {:commit, get_fun.(schema, id)}
+        {:commit, get_fun.(schema, id) |> repo.preload(preloads, force: true)}
       end)
+
+    # Process.info(self(), :current_stacktrace)
 
     value
   end
@@ -114,12 +122,12 @@ defmodule EctoSync.Helpers do
     end)
   end
 
-  # def update_cache(%SyncConfig{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
+  # def update_cache(%Config{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
   #   Cachex.del(cache_name, {schema, id})
   #   {:ok, {schema, id}}
   # end
 
-  # def update_cache(%SyncConfig{
+  # def update_cache(%Config{
   #       schema: schema,
   #       event: _event,
   #       id: id,

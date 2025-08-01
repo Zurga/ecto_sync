@@ -186,15 +186,24 @@ defmodule EctoSyncTest do
 
     test "subscribe/2 to inserts", %{person: person} do
       assert [{{Post, :inserted}, nil}] == subscribe(Post, :inserted)
+      person = do_preload(person, [:posts])
 
-      {:ok, post} = TestRepo.insert(%Post{person_id: person.id})
+      {:ok, post} =
+        TestRepo.insert(%Post{person_id: person.id})
+        |> do_preload(person: [:posts])
+
+      sync_opts = [preloads: %{Post => [person: [:posts]]}]
 
       receive do
         {{Post, :inserted}, _} = sync_args ->
-          synced = EctoSync.sync(post, sync_args)
+          synced = EctoSync.sync(post, sync_args, sync_opts)
+
+          assert do_preload(person, posts: [person: :posts]) ==
+                   EctoSync.sync(person, sync_args, sync_opts)
+
           assert synced == post
-          assert [^post] = EctoSync.sync([], sync_args)
-          assert ^post = EctoSync.sync(nil, sync_args)
+          assert [^post] = EctoSync.sync([], sync_args, sync_opts)
+          assert ^post = EctoSync.sync(nil, sync_args, sync_opts)
       after
         200 ->
           raise "no inserts"
@@ -426,6 +435,23 @@ defmodule EctoSyncTest do
 
       refute_received({{Person, :updated}, _})
     end
+
+    test "preloads", %{person: person} do
+      assert [{{Post, :inserted}, nil}] == subscribe(Post, :inserted)
+
+      {:ok, post} = TestRepo.insert(%Post{person_id: person.id})
+
+      receive do
+        {{Post, :inserted}, _} = sync_args ->
+          synced = EctoSync.sync(post, sync_args, preloads: %{Post => :person})
+          assert synced == post |> do_preload([:person])
+          assert [^post] = EctoSync.sync([], sync_args)
+          assert ^post = EctoSync.sync(nil, sync_args)
+      after
+        200 ->
+          raise "no inserts"
+      end
+    end
   end
 
   @preloads [posts: [:tags, :labels]]
@@ -511,6 +537,25 @@ defmodule EctoSyncTest do
           assert person2_expected_after_update == synced
       after
         200 -> raise "no updates for person1"
+      end
+    end
+
+    test "preloads", %{person_with_posts_and_tags: person} do
+      person = do_preload(person, @preloads)
+
+      subscribe(person, assocs: [posts: [:tags, :labels]])
+
+      {:ok, _post} = TestRepo.insert(%Post{person_id: person.id})
+
+      receive do
+        {{Post, :inserted}, _} = sync_args ->
+          synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
+          assert do_preload(person, @preloads) == synced
+          synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
+          assert do_preload(person, @preloads) == synced
+          synced
+      after
+        200 -> raise "nothing POSTS"
       end
     end
   end

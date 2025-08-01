@@ -1,37 +1,38 @@
 defmodule EctoSync.Syncer do
   @moduledoc false
-  alias EctoSync.SyncConfig
+  alias EctoSync.Config
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
 
   def sync(from_cache_or_value, event, opts \\ [])
 
-  def sync(:cached, {{_, :deleted}, _} = event, _opts) do
+  def sync(:cached, {{_, :deleted}, _} = event, opts) do
     event
-    |> SyncConfig.new()
+    |> Config.new(opts)
     |> do_unsubscribe()
   end
 
-  def sync(:cached, {{_, :inserted}, _} = event, _opts) do
+  def sync(:cached, {{_, :inserted}, _} = event, opts) do
     value =
       event
-      |> SyncConfig.new()
+      |> Config.new(opts)
       |> get_from_cache()
 
     EctoSync.subscribe(value)
     value
   end
 
-  def sync(:cached, event, _opts), do: SyncConfig.new(event) |> get_from_cache()
+  def sync(:cached, event, opts), do: Config.new(event, opts) |> get_from_cache()
 
-  def sync(value_or_values, {{_, :deleted}, _} = event, _opts) do
-    config = SyncConfig.new(event)
+  def sync(value_or_values, {{_, :deleted}, _} = event, opts) do
+    config = Config.new(event, opts)
     do_unsubscribe(config)
     do_sync(value_or_values, config.id, config)
   end
 
-  def sync(value_or_values, event, _opts) do
-    config = SyncConfig.new(event)
+  def sync(value_or_values, event, opts) do
+    config = Config.new(event, opts)
+
     new = get_from_cache(config)
 
     do_sync(value_or_values, new, config)
@@ -54,7 +55,12 @@ defmodule EctoSync.Syncer do
        )
        when is_struct(value) do
     if same_record?(value, new) do
-      get_preloaded(value_schema, config.id, find_preloads(value), config)
+      get_preloaded(
+        value_schema,
+        config.id,
+        find_preloads(config.preloads[new_schema] || value),
+        config
+      )
     else
       paths = path_to(value_schema, new_schema, config)
 
@@ -193,7 +199,7 @@ defmodule EctoSync.Syncer do
 
   defp maybe_update(value, new, config) do
     if same_record?(value, new) do
-      preloads = find_preloads(value)
+      preloads = find_preloads(config.preloads[new.__struct__] || value)
 
       get_preloaded(get_schema(value), new.id, preloads, config)
     else
@@ -216,8 +222,8 @@ defmodule EctoSync.Syncer do
        when is_list(assocs) do
     preloads =
       case assocs do
-        [] -> []
-        _ -> find_preloads(assocs)
+        [] -> config.preloads[schema] || []
+        _ -> find_preloads(config.preloads[schema] || assocs || [])
       end
 
     # In case a many to many assocs has to be inserted.
@@ -236,7 +242,7 @@ defmodule EctoSync.Syncer do
   end
 
   defp do_insert(_value, _key, assoc, new, %{schema: schema} = config) do
-    preloads = find_preloads(assoc || config.preloads)
+    preloads = find_preloads(config.preloads[schema] || assoc)
 
     new = get_preloaded(schema, new.id, preloads, config)
 
@@ -249,11 +255,11 @@ defmodule EctoSync.Syncer do
     repo = config.repo
 
     config =
-      SyncConfig.maybe_put_get_fun(config, fn _schema, _id ->
+      Config.maybe_put_get_fun(config, fn _schema, _id ->
         repo.get(schema, id) |> repo.preload(preloads, force: true)
       end)
 
-    get_from_cache([preloads], config)
+    get_from_cache(%{config | schema: schema, id: id, preloads: %{schema => preloads}})
   end
 
   defp resolve_assoc(%ManyToMany{join_through: schema} = assoc, value, new, %{schema: schema})

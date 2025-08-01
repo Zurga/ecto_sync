@@ -1,4 +1,4 @@
-defmodule EctoSync.SyncConfig do
+defmodule EctoSync.Config do
   @moduledoc false
 
   import Ecto.Query
@@ -16,8 +16,8 @@ defmodule EctoSync.SyncConfig do
             graph: nil,
             join_modules: nil
 
-  def new({label, {identifiers, ref}}) when is_atom(label) do
-    {config, state} = init(identifiers, ref)
+  def new({label, {identifiers, ref}}, opts) when is_atom(label) do
+    {config, state} = init(identifiers, ref, opts)
 
     {%{table_name: table, primary_key: primary_key, columns: columns}, event, _} =
       state.watchers
@@ -45,16 +45,16 @@ defmodule EctoSync.SyncConfig do
     }
   end
 
-  def new({{schema, event}, {identifiers, ref}}) do
-    {config, _} = init(identifiers, ref)
+  def new({{schema, event}, {identifiers, ref}}, opts) do
+    {config, _} = init(identifiers, ref, opts)
     %{config | schema: schema, event: event, get_fun: &config.repo.get(&1, &2)}
   end
 
-  defp init(%{id: id} = identifiers, ref) do
+  defp init(%{id: id} = identifiers, ref, opts) do
     assocs = Map.drop(identifiers, [:id])
 
     %{repo: repo, cache_name: cache_name, graph: graph, join_modules: join_modules} =
-      state = :persistent_term.get(__MODULE__)
+      state = :persistent_term.get(EctoSync)
 
     {%__MODULE__{
        id: id,
@@ -63,7 +63,8 @@ defmodule EctoSync.SyncConfig do
        repo: repo,
        assocs: assocs,
        graph: graph,
-       join_modules: join_modules
+       join_modules: join_modules,
+       preloads: opts[:preloads]
      }, state}
   end
 

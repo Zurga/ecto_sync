@@ -20,7 +20,7 @@ defmodule EctoSync do
 
   use Supervisor
   require Logger
-  alias EctoSync.{PubSub, Subscriber, SyncConfig, Syncer}
+  alias EctoSync.{PubSub, Subscriber, Syncer}
 
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
@@ -61,7 +61,7 @@ defmodule EctoSync do
       |> Enum.uniq()
       |> EctoSync.Graph.new()
 
-    :persistent_term.put(SyncConfig, %{state | graph: vertex_pairs, join_modules: join_modules})
+    :persistent_term.put(__MODULE__, %{state | graph: vertex_pairs, join_modules: join_modules})
 
     children = [
       {Cachex, state.cache_name},
@@ -297,10 +297,10 @@ defmodule EctoSync do
          Enum.map(@events, fn event ->
            label = encode_watcher_identifier({Keyword.get(opts, :label, schema), event})
 
-           opts = Keyword.put(opts, :label, label)
            :persistent_term.put({EctoSync, {schema, event}}, label)
            :persistent_term.put({EctoSync, label}, {schema, event})
-           # Registry.register(LabelRegistry, {schema, event}, label)
+
+           opts = Keyword.put(opts, :label, label)
            {schema, event, opts}
          end))
       |> Enum.uniq()
@@ -337,7 +337,6 @@ defmodule EctoSync do
 
         nil ->
           Logger.warning("#{schema} does not have associated key: #{inspect(key)}")
-
           columns
 
         _ ->

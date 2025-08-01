@@ -12,7 +12,7 @@ defmodule EctoSync.PubSubAdapterTest do
       Phoenix.PubSub.subscribe(:pub_sub, "test")
       Phoenix.PubSub.subscribe(:pub_sub, "test")
 
-      :persistent_term.put(SyncConfig, %{repo: TestRepo, cache_name: :test})
+      :persistent_term.put(EctoSync, %{repo: TestRepo, cache_name: :test})
       Phoenix.PubSub.broadcast(:pub_sub, "test", {{Test, :updated}, %{id: :world}})
 
       refs =
