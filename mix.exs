@@ -8,13 +8,14 @@ defmodule EctoSync.MixProject do
       app: :ecto_sync,
       description: "Subscribe to events emitted by EctoWatch, sync variables with cached values.",
       homepage_url: @source,
-      version: "0.1.2",
+      version: "0.1.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       deps: deps(),
       package: [
+        exclude_patterns: ["priv", ".formatter.exs"],
         maintainers: ["Jim Lemmers"],
         licenses: ["MIT"],
         links: %{
