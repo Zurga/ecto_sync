@@ -16,7 +16,8 @@ defmodule EctoSync do
             watchers: [],
             schemas: [],
             graph: nil,
-            join_modules: nil
+            join_modules: nil,
+            edge_fields: nil
 
   use Supervisor
   require Logger
@@ -39,7 +40,7 @@ defmodule EctoSync do
       %__MODULE__{
         cache_name: opts[:cache_name] || @cache_name,
         repo: opts[:repo],
-        pub_sub: opts[:pub_sub],
+        pub_sub: opts[:pub_sub] || :ecto_sync_pub_sub,
         watchers: opts[:watchers]
       }
 
@@ -49,7 +50,7 @@ defmodule EctoSync do
   @impl true
   @doc false
   def init(state) do
-    {vertex_pairs, join_modules} =
+    {vertex_pairs, join_modules, edge_fields} =
       state.watchers
       |> Enum.map(fn
         {%{table_name: table}, _, _} ->
@@ -61,12 +62,17 @@ defmodule EctoSync do
       |> Enum.uniq()
       |> EctoSync.Graph.new()
 
-    :persistent_term.put(__MODULE__, %{state | graph: vertex_pairs, join_modules: join_modules})
+    :persistent_term.put(__MODULE__, %{
+      state
+      | graph: vertex_pairs,
+        join_modules: join_modules,
+        edge_fields: edge_fields
+    })
 
     children = [
       {Cachex, state.cache_name},
-      {Phoenix.PubSub, name: :ecto_sync_pub_sub, adapter: PubSub},
-      {EctoWatch, [repo: state.repo, pub_sub: :ecto_sync_pub_sub, watchers: state.watchers]},
+      {Phoenix.PubSub, name: state.pub_sub, adapter: PubSub},
+      {EctoWatch, [repo: state.repo, pub_sub: state.pub_sub, watchers: state.watchers]},
       {Registry, keys: :duplicate, name: EventRegistry}
     ]
 

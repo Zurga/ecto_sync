@@ -4,7 +4,7 @@ defmodule EctoSync.Subscriber do
   import EctoSync.Helpers
 
   alias Ecto.Association
-  alias Ecto.Association.{BelongsTo, Has, ManyToMany}
+  alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
 
   @events ~w/inserted updated deleted/a
 
@@ -82,11 +82,17 @@ defmodule EctoSync.Subscriber do
     |> subscribe_events()
   end
 
-  def subscribe_events(struct, %Has{related_key: related_key, related: schema}) do
+  def subscribe_events(struct, %Has{related_key: related_key, related: schema, field: field}) do
     parent_id = primary_key(struct)
     assoc_field = {related_key, parent_id}
+    assocs = Map.get(struct, field)
 
-    [{{schema, :inserted}, assoc_field} | subscribe_events(struct)]
+    [{{schema, :inserted}, assoc_field} | subscribe_events(struct)] ++
+      [Enum.map(assocs, &subscribe_events/1)]
+  end
+
+  def subscribe_event(struct, %HasThrough{} = assoc) do
+    []
   end
 
   def subscribe_events(
@@ -231,8 +237,7 @@ defmodule EctoSync.Subscriber do
         flat_map_assocs(value, nested, func, acc)
 
       _ ->
-        acc =
-          [func.(parent, nil) | acc]
+        acc = [func.(parent, nil) | acc]
 
         {related, related_key} =
           case assoc_info do

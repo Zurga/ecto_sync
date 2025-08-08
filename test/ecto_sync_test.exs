@@ -525,6 +525,20 @@ defmodule EctoSyncTest do
 
       person2_expected_after_update = TestRepo.get(Person, person2.id) |> do_preload(preloads)
 
+      other_process =
+        Task.async(fn ->
+          subscribe(person2, assocs: [:posts])
+
+          receive do
+            {{Post, :inserted}, _} = sync_args ->
+              synced = EctoSync.sync(person2, sync_args)
+
+              assert person2_expected_after_update == synced
+          after
+            5000 -> raise "no updates in other process"
+          end
+        end)
+
       receive do
         {{Post, :updated}, _} = sync_args ->
           synced = EctoSync.sync(person1, sync_args)
@@ -535,6 +549,8 @@ defmodule EctoSyncTest do
       after
         500 -> raise "no updates for person1"
       end
+
+      assert Task.await(other_process)
     end
 
     test "preloads", %{person_with_posts_and_tags: person} do
@@ -557,11 +573,61 @@ defmodule EctoSyncTest do
     end
   end
 
+  describe "has with where clause" do
+    @preloads [
+      :bad_posts,
+      posts: [:tags, :labels],
+      test_posts: [:tags, :labels],
+      test_posts_again: [:tags, :labels]
+    ]
+    test "inserted", %{person_with_posts: person} do
+      person = do_preload(person, @preloads)
+
+      subscribe(person, assocs: @preloads)
+
+      {:ok, _post} = TestRepo.insert(%Post{person_id: person.id, name: "test"})
+
+      receive do
+        {{Post, :inserted}, _} = sync_args ->
+          synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
+          assert do_preload(person, @preloads) == synced
+      after
+        500 -> raise "nothing POSTS"
+      end
+    end
+
+    test "updated", %{person_with_posts: person} do
+      %{posts: [post | _]} =
+        person =
+        do_preload(person, @preloads)
+        |> IO.inspect()
+
+      subscribe(person, assocs: @preloads)
+      |> IO.inspect(label: :subscriptions)
+
+      {:ok, _} =
+        Ecto.Changeset.change(post, %{name: "test"})
+        |> TestRepo.update()
+
+      # flush()
+      # |> IO.inspect()
+
+      receive do
+        {{Post, :updated}, _} = sync_args ->
+          synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
+          assert do_preload(person, @preloads) == synced
+      after
+        500 -> raise "nothing POSTS"
+      end
+    end
+  end
+
   describe "many to many with join_through module" do
+    @preloads [:favourite_tags, posts: :tags]
     test "inserted", %{person_with_posts_and_tags: person} do
       %{posts: [post1, post2]} = person = do_preload(person, @preloads)
 
-      subscribe(person, assocs: [:favourite_tags, posts: :tags])
+      subscribe(person, assocs: @preloads)
 
       {:ok, _tag} =
         TestRepo.insert(%Tag{name: "inserted", posts: [post1]})
@@ -688,13 +754,16 @@ defmodule EctoSyncTest do
         500 -> raise "no tag delete"
       end
     end
+  end
 
-    test "inserted with join_through table", %{person_with_posts_and_tags: person} do
+  describe "many to many with join through table" do
+    @preloads [posts: [:labels]]
+    test "inserted", %{person_with_posts_and_tags: person} do
       %{posts: [_post1, post2]} = person = do_preload(person, @preloads)
 
       {:ok, label} = TestRepo.insert(%Label{name: "new label"})
 
-      subscribe(person, assocs: [posts: [:tags, :labels]])
+      subscribe(person, assocs: @preloads)
 
       {:ok, _} =
         Ecto.Changeset.change(post2, %{labels: [label | post2.labels]})
@@ -784,7 +853,10 @@ defmodule EctoSyncTest do
   end
 
   defp do_preload(value, preloads) do
-    Ecto.reset_fields(value, preloads)
+    assocs = value.__struct__.__schema__(:associations)
+    fields = assocs ++ preloads
+
+    Ecto.reset_fields(value, fields)
     |> TestRepo.preload(preloads, force: true)
   end
 

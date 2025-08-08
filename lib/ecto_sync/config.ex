@@ -4,17 +4,19 @@ defmodule EctoSync.Config do
   import Ecto.Query
 
   @type t :: %__MODULE__{}
-  defstruct id: nil,
-            schema: nil,
-            event: nil,
-            repo: nil,
+  defstruct assocs: nil,
             cache_name: nil,
-            ref: nil,
+            edge_fields: nil,
+            event: nil,
             get_fun: nil,
-            assocs: nil,
-            preloads: [],
             graph: nil,
-            join_modules: nil
+            id: nil,
+            join_modules: nil,
+            preloads: [],
+            pub_sub: nil,
+            ref: nil,
+            repo: nil,
+            schema: nil
 
   def new({label, {identifiers, ref}}, opts) when is_atom(label) do
     {config, state} = init(identifiers, ref, opts)
@@ -53,19 +55,13 @@ defmodule EctoSync.Config do
   defp init(%{id: id} = identifiers, ref, opts) do
     assocs = Map.drop(identifiers, [:id])
 
-    %{repo: repo, cache_name: cache_name, graph: graph, join_modules: join_modules} =
-      state = :persistent_term.get(EctoSync)
+    state = :persistent_term.get(EctoSync)
 
-    {%__MODULE__{
-       id: id,
-       cache_name: cache_name,
-       ref: ref,
-       repo: repo,
-       assocs: assocs,
-       graph: graph,
-       join_modules: join_modules,
-       preloads: opts[:preloads]
-     }, state}
+    global =
+      Map.take(state, ~w/cache_name edge_fields graph join_modules pub_sub repo/a)
+
+    {%__MODULE__{id: id, ref: ref, assocs: assocs, preloads: opts[:preloads]}
+     |> Map.merge(global), state}
   end
 
   def maybe_put_get_fun(config, nil), do: config

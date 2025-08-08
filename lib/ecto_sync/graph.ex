@@ -1,60 +1,67 @@
 defmodule EctoSync.Graph do
   @moduledoc false
-  import EctoSync.Helpers, only: [ecto_schema_mod?: 1]
+  import EctoSync.Helpers, only: [ecto_schema_mod?: 1, reduce_assocs: 3]
   require Logger
 
   def new(modules) do
-    assocs =
-      modules
-      |> Enum.flat_map(fn module ->
-        if ecto_schema_mod?(module) do
-          module.__schema__(:associations)
-          |> Enum.map(&module.__schema__(:association, &1))
-        else
-          []
-        end
-      end)
+    modules = Enum.filter(modules, &ecto_schema_mod?/1)
 
     join_modules =
-      Enum.flat_map(assocs, fn
-        %Ecto.Association.ManyToMany{
-          join_through: join_through,
-          owner: from,
-          related: to,
-          join_keys: [{from_fk, _}, {to_fk, _}]
-        } ->
-          [
-            {join_through,
-             %{
-               from => {to_fk, to},
-               to => {from_fk, from}
-             }}
-          ]
+      modules
+      |> Enum.reduce([], fn module, acc ->
+        reduce_assocs(module, acc, fn
+          {_, assoc}, acc ->
+            case assoc do
+              %Ecto.Association.ManyToMany{
+                join_through: join_through,
+                owner: from,
+                related: to,
+                join_keys: [{from_fk, _}, {to_fk, _}]
+              } ->
+                [
+                  {join_through,
+                   %{
+                     from => {to_fk, to},
+                     to => {from_fk, from}
+                   }}
+                  | acc
+                ]
 
-        _ ->
-          []
+              _ ->
+                acc
+            end
+        end)
       end)
       |> Enum.into(%{})
 
     {edges, edge_fields} =
-      assocs
+      modules
       |> Enum.reduce(
         {[], %{}},
-        fn %{owner: from, related: to, field: field} = assoc, {mod_acc, field_acc} ->
-          field_acc = Map.update(field_acc, {from, to}, [field], &[field | &1])
+        fn schema, acc ->
+          reduce_assocs(schema, acc, fn {field, %{owner: from} = assoc}, {edge_acc, field_acc} ->
+            {to, related} =
+              case assoc do
+                %Ecto.Association.ManyToMany{
+                  join_through: join_through,
+                  related: related
+                } ->
+                  {join_through, related}
 
-          mod_acc =
-            case assoc do
-              %Ecto.Association.ManyToMany{
-                join_through: join_through
-              } ->
-                [{from, join_through} | mod_acc]
+                %Ecto.Association.HasThrough{through: through} ->
+                  to = resolve_through(schema, through)
 
-              _ ->
-                [{from, to} | mod_acc]
-            end
+                  {to, to}
 
-          {mod_acc, field_acc}
+                %{related: to} ->
+                  {to, to}
+              end
+
+            field_acc =
+              Map.update(field_acc, {from, related}, [field], fn fields -> [field | fields] end)
+
+            {[{from, to} | edge_acc], field_acc}
+          end)
         end
       )
 
@@ -78,7 +85,19 @@ defmodule EctoSync.Graph do
           end
       end
 
-    {vertex_pairs, join_modules}
+    {vertex_pairs, join_modules, edge_fields}
+  end
+
+  defp resolve_through(schema, []), do: schema
+
+  defp resolve_through(schema, [key | rest]) do
+    case schema.__schema__(:association, key) do
+      %{related: related} ->
+        resolve_through(related, rest)
+
+      %Ecto.Association.HasThrough{through: through} ->
+        resolve_through(schema, through)
+    end
   end
 
   defp normalize_path([_], _, _, acc) do
@@ -93,8 +112,13 @@ defmodule EctoSync.Graph do
         child -> child
       end
 
-    Map.get(edge_fields, {parent, child})
-    |> Enum.reduce(acc, &Keyword.put(&2, &1, []))
+    case Map.get(edge_fields, {parent, child}) do
+      nil ->
+        raise "no field for edge #{inspect({parent, child})}"
+
+      fields ->
+        Enum.reduce(fields, acc, &Keyword.put(&2, &1, []))
+    end
   end
 
   defp normalize_path([parent, join, child | rest], join_modules, edge_fields, acc)
