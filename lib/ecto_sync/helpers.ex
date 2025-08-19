@@ -122,6 +122,18 @@ defmodule EctoSync.Helpers do
     end)
   end
 
+  def resolve_through(schema, []), do: schema
+
+  def resolve_through(schema, [key | rest]) do
+    case schema.__schema__(:association, key) do
+      %{related: related} ->
+        resolve_through(related, rest)
+
+      %Ecto.Association.HasThrough{through: through} ->
+        resolve_through(schema, through)
+    end
+  end
+
   # def update_cache(%Config{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
   #   Cachex.del(cache_name, {schema, id})
   #   {:ok, {schema, id}}

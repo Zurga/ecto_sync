@@ -1,6 +1,6 @@
 defmodule EctoSync.Graph do
   @moduledoc false
-  import EctoSync.Helpers, only: [ecto_schema_mod?: 1, reduce_assocs: 3]
+  import EctoSync.Helpers, only: [ecto_schema_mod?: 1, reduce_assocs: 3, resolve_through: 2]
   require Logger
 
   def new(modules) do
@@ -86,18 +86,6 @@ defmodule EctoSync.Graph do
       end
 
     {vertex_pairs, join_modules, edge_fields}
-  end
-
-  defp resolve_through(schema, []), do: schema
-
-  defp resolve_through(schema, [key | rest]) do
-    case schema.__schema__(:association, key) do
-      %{related: related} ->
-        resolve_through(related, rest)
-
-      %Ecto.Association.HasThrough{through: through} ->
-        resolve_through(schema, through)
-    end
   end
 
   defp normalize_path([_], _, _, acc) do
