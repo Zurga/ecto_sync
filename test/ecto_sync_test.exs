@@ -790,6 +790,23 @@ defmodule EctoSyncTest do
     end
   end
 
+  describe "changesets" do
+    test "basic changeset functionality", %{person: person} do
+      subscribe(person)
+      changeset = Ecto.Changeset.change(person, %{name: "updated"})
+
+      TestRepo.update(changeset)
+
+      receive do
+        args ->
+          %{changes: changes} = EctoSync.sync(changeset, args)
+          assert map_size(changes) == 0
+      after
+        500 -> raise "no updates"
+      end
+    end
+  end
+
   describe "subscriptions/0" do
     test "subscriptions can be listed", %{person: person} do
       subscribe(person)

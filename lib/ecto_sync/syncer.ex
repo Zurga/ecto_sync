@@ -2,6 +2,7 @@ defmodule EctoSync.Syncer do
   @moduledoc false
   alias EctoSync.PubSub
   alias EctoSync.Config
+  alias Ecto.Changeset
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
 
@@ -54,6 +55,19 @@ defmodule EctoSync.Syncer do
 
   defp do_sync([], new, %{event: :inserted}) do
     [new]
+  end
+
+  defp do_sync(
+         %Changeset{data: %{__struct__: schema} = old} = changeset,
+         new,
+         %{schema: schema} = config
+       ) do
+
+    if same_record?(old, new) do
+      Changeset.change(new, changeset.changes)
+    else
+      changeset
+    end
   end
 
   defp do_sync(values, new, config) when is_list(values),
