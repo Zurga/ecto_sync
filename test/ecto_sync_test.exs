@@ -164,6 +164,9 @@ defmodule EctoSyncTest do
     end
   end
 
+  describe "feature: automatic subscription on insert" do
+  end
+
   describe "integrations" do
     test "subscribing with EctoWatch also works", %{person: person} do
       EctoWatch.subscribe(encode_watcher_identifier({Post, :inserted}), nil)
@@ -181,7 +184,7 @@ defmodule EctoSyncTest do
       end
     end
 
-    test "subscribe/2 to inserts", %{person: person} do
+    test "types of sync arguments for insert", %{person: person} do
       assert [{{Post, :inserted}, nil}] == subscribe(Post, :inserted)
       person = do_preload(person, [:posts])
 
@@ -200,11 +203,21 @@ defmodule EctoSyncTest do
 
           assert synced == post
           assert [^post] = EctoSync.sync([], sync_args, sync_opts)
+          assert [%Post{}, ^post] = EctoSync.sync([%Post{}], sync_args, sync_opts)
           assert ^post = EctoSync.sync(nil, sync_args, sync_opts)
+          assert "" == EctoSync.sync("", sync_args)
+          assert 9 == EctoSync.sync(9, sync_args)
       after
         500 ->
           raise "no inserts"
       end
+
+      # Check that we have not subscribed multiple times
+      {:ok, _updated} =
+        Ecto.Changeset.change(post, %{name: "updated"})
+        |> TestRepo.update()
+
+      assert [_] = flush()
     end
 
     test "only one message is sent after insert", %{person: person} do
@@ -215,13 +228,17 @@ defmodule EctoSyncTest do
       assert [_] = flush()
     end
 
-    test "subscribe/2 to updates", %{person: person} do
+    test "subscribe/2 full flow", %{person: person} do
+      person = do_preload(person, [:posts])
+      subscribe(person, assocs: [:posts])
       {:ok, %{id: post_id} = post} = TestRepo.insert(%Post{person_id: person.id})
 
-      assert [
-               {{Post, :updated}, post_id}
-             ] ==
-               subscribe({Post, :updated}, post_id)
+      # assert [{{Post, :updated}, post_id} ] == subscribe({Post, :updated}, post_id)
+
+      receive do
+        {{Post, :inserted}, _} = sync_args ->
+          assert do_preload(person, [:posts]) == EctoSync.sync(person, sync_args)
+      end
 
       {:ok, updated} =
         Ecto.Changeset.change(post, %{name: "updated"})
@@ -229,13 +246,7 @@ defmodule EctoSyncTest do
 
       receive do
         {{Post, :updated}, _} = sync_args ->
-          synced = EctoSync.sync(post, sync_args)
-          assert synced == updated
-          assert [%{}] == EctoSync.sync([%{}], sync_args)
-          assert %{} == EctoSync.sync(%{}, sync_args)
-          assert nil == EctoSync.sync(nil, sync_args)
-          assert "" == EctoSync.sync("", sync_args)
-          assert 9 == EctoSync.sync(9, sync_args)
+          assert do_preload(person, [:posts]) == EctoSync.sync(person, sync_args)
       after
         500 ->
           raise "no updates"
@@ -347,7 +358,7 @@ defmodule EctoSyncTest do
         |> TestRepo.insert()
         |> do_preload(@preloads)
 
-      subscribe(post, assocs: [:person])
+      subscribe(post, assocs: @preloads)
 
       {:ok, _person} = TestRepo.insert(%Person{})
       {:ok, _person} = TestRepo.insert(%Person{posts: [post]})
@@ -368,7 +379,7 @@ defmodule EctoSyncTest do
     } do
       post1 = do_preload(post1, @preloads)
 
-      subscribe(post1, assocs: [:person])
+      subscribe(post1, assocs: @preloads)
 
       for p <- [person, other_person] do
         TestRepo.delete(p)
@@ -388,7 +399,7 @@ defmodule EctoSyncTest do
     test "update", %{person_with_posts_and_tags: %{posts: [post1 | _]} = person} do
       post1 = do_preload(post1, @preloads)
 
-      subscribe(post1, assocs: [:person])
+      subscribe(post1, assocs: @preloads)
 
       {:ok, _} =
         Ecto.Changeset.change(person, %{name: "updated"})
