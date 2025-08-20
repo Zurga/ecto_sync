@@ -26,6 +26,25 @@ defmodule EctoSync.Syncer do
 
   def sync(:cached, event, opts), do: Config.new(event, opts) |> get_from_cache()
 
+  def sync(
+        %Changeset{data: %{__struct__: schema} = old} = changeset,
+        {{schema, _}, _} = event,
+        opts
+      ) do
+    config = Config.new(event, opts)
+    changeset_fn = opts[:changeset]
+
+    preloads = find_preloads(config.preloads[schema] || old)
+
+    new = get_preloaded(schema, config.id, preloads, config)
+
+    if same_record?(old, new) do
+      changeset_fn.(new, changeset.params)
+    else
+      changeset
+    end
+  end
+
   def sync(value_or_values, {{_, :deleted}, _} = event, opts) do
     config = Config.new(event, opts)
     do_unsubscribe(config)
@@ -55,19 +74,6 @@ defmodule EctoSync.Syncer do
 
   defp do_sync([], new, %{event: :inserted}) do
     [new]
-  end
-
-  defp do_sync(
-         %Changeset{data: %{__struct__: schema} = old} = changeset,
-         new,
-         %{schema: schema} = config
-       ) do
-
-    if same_record?(old, new) do
-      Changeset.change(new, changeset.changes)
-    else
-      changeset
-    end
   end
 
   defp do_sync(values, new, config) when is_list(values),

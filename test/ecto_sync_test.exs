@@ -792,15 +792,29 @@ defmodule EctoSyncTest do
 
   describe "changesets" do
     test "basic changeset functionality", %{person: person} do
+      person = do_preload(person, [:posts])
+
+      changeset_fn = fn struct, changes ->
+        struct
+        |> Ecto.Changeset.cast(changes, [:name])
+        |> Ecto.Changeset.cast_assoc(:posts,
+          with: fn struct, changes ->
+            struct
+            |> Ecto.Changeset.cast(changes, [:name])
+          end
+        )
+      end
+
       subscribe(person)
-      changeset = Ecto.Changeset.change(person, %{name: "updated"})
+
+      changeset = changeset_fn.(person, %{name: "updated", posts: [%{name: "test"}]})
 
       TestRepo.update(changeset)
 
       receive do
         args ->
-          %{changes: changes} = EctoSync.sync(changeset, args)
-          assert map_size(changes) == 0
+          %{changes: changes} = EctoSync.sync(changeset, args, changeset: changeset_fn)
+          assert map_size(changes) == 1
       after
         500 -> raise "no updates"
       end

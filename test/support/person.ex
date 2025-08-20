@@ -4,7 +4,7 @@ defmodule Person do
 
   schema "persons" do
     field(:name, :string)
-    has_many(:posts, Post)
+    has_many(:posts, Post, on_replace: :delete)
     has_many(:test_posts, Post, where: [name: "test"])
     has_many(:test_posts_again, Post, where: [name: "test"], preload_order: [asc: :id])
     has_many(:bad_posts, Post, where: [name: {:in, ["bad", "worst"]}, body: "blabla"])
