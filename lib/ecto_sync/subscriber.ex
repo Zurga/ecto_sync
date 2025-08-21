@@ -91,7 +91,7 @@ defmodule EctoSync.Subscriber do
       [Enum.map(assocs, &subscribe_events/1)]
   end
 
-  def subscribe_event(struct, %HasThrough{} = assoc) do
+  def subscribe_event(_struct, %HasThrough{}) do
     []
   end
 

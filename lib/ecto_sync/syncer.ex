@@ -31,7 +31,7 @@ defmodule EctoSync.Syncer do
     do_sync(value_or_values, config.id, config)
   end
 
-  def sync([%{__struct__: schema} = first | _] = values, {{schema, :inserted}, _} = event, opts) do
+  def sync([%{__struct__: schema} | _] = values, {{schema, :inserted}, _} = event, opts) do
     config = Config.new(event, opts)
     preloads = find_preloads(config.preloads[schema] || values)
 
