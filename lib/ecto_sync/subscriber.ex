@@ -13,8 +13,10 @@ defmodule EctoSync.Subscriber do
   def subscribe(values, opts) when is_list(values) do
     values
     |> Enum.flat_map(&subscribe(&1, opts))
+    |> add_opts(opts)
     |> Enum.uniq()
-    |> Enum.map(fn {watcher_identifier, id} ->
+    |> IO.inspect()
+    |> Enum.map(fn {{watcher_identifier, id}, opts} ->
       do_subscribe(watcher_identifier, id, opts)
     end)
   end
@@ -29,22 +31,23 @@ defmodule EctoSync.Subscriber do
 
   def subscribe(value, opts) when is_struct(value) do
     subscribe_events(value)
-    |> Enum.concat(
-      flat_map_assocs(value, opts[:assocs] || [], fn parent, assoc_info ->
-        subscribe_events(parent, assoc_info)
-      end)
-    )
+    |> add_opts(opts)
+    |> Enum.concat(subscribe_events_assocs(value, opts[:assocs] || []))
+    |> IO.inspect(label: :after_sub_assoc)
     |> then(fn events ->
       if opts[:inserted] do
         schema = get_schema(value)
-        Enum.concat(events, subscribe({schema, :inserted}, nil))
+        Enum.concat(events, {subscribe({schema, :inserted}, nil), opts})
       else
         events
       end
     end)
     |> Enum.uniq()
     |> Enum.sort()
-    |> Enum.map(fn {watcher_identifier, id} -> do_subscribe(watcher_identifier, id, []) end)
+    |> IO.inspect(label: :after_sort)
+    |> Enum.map(fn {{watcher_identifier, id}, opts} ->
+      do_subscribe(watcher_identifier, id, opts)
+    end)
   end
 
   def subscribe(watcher_identifier, id) do
@@ -91,17 +94,17 @@ defmodule EctoSync.Subscriber do
       [Enum.map(assocs, &subscribe_events/1)]
   end
 
-  def subscribe_event(_struct, %HasThrough{}) do
-    []
-  end
+  def subscribe_events(struct, %HasThrough{through: [k | through]}),
+    do:
+      subscribe_events_assocs(
+        Map.get(struct, k) |> IO.inspect(label: :assoc),
+        through |> IO.inspect(label: :throug)
+      )
 
-  def subscribe_events(
-        struct,
-        %ManyToMany{
-          join_through: join_through,
-          join_keys: [{parent_key, _} | _]
-        }
-      ) do
+  def subscribe_events(struct, %ManyToMany{
+        join_through: join_through,
+        join_keys: [{parent_key, _} | _]
+      }) do
     id = primary_key(struct)
 
     event_label = fn
@@ -177,7 +180,7 @@ defmodule EctoSync.Subscriber do
   def unsubscribe(value, opts) when is_struct(value) do
     subscribe_events(value)
     |> Enum.concat(
-      flat_map_assocs(value, opts[:assocs] || [], fn parent, assoc_info ->
+      subscribe_events_assocs(value, opts[:assocs] || [], fn parent, assoc_info ->
         subscribe_events(parent, assoc_info)
       end)
     )
@@ -187,43 +190,50 @@ defmodule EctoSync.Subscriber do
     end)
   end
 
-  defp flat_map_assocs(parent, assoc_keys, func, acc \\ [])
+  defp subscribe_events_assocs(parent, assoc_keys, acc \\ [])
 
-  defp flat_map_assocs(%Ecto.Association.NotLoaded{}, _, _, acc), do: acc
+  defp subscribe_events_assocs(%Ecto.Association.NotLoaded{}, _, acc), do: acc
 
-  defp flat_map_assocs(parents, assoc_keys, func, acc) when is_list(parents),
-    do:
-      Enum.reduce(
-        parents,
-        acc,
-        &flat_map_assocs(&1, assoc_keys, func, &2)
-      )
-      |> List.flatten()
+  defp subscribe_events_assocs(parents, assoc_keys, acc) when is_list(parents) do
+    Enum.reduce(
+      parents,
+      acc,
+      &subscribe_events_assocs(&1, assoc_keys, &2)
+    )
+    |> List.flatten()
+  end
 
-  defp flat_map_assocs(parent, nil, func, acc),
-    do: [
-      func.(parent, nil) | acc
-    ]
+  defp subscribe_events_assocs(parent, nil, acc), do: [subscribe_events(parent, nil) | acc]
 
-  defp flat_map_assocs(parent, assoc_keys, func, acc) when is_list(assoc_keys),
-    do:
-      Enum.reduce(assoc_keys, acc, &flat_map_assocs(parent, &1, func, &2))
-      |> List.flatten()
+  defp subscribe_events_assocs(parent, assoc_keys, acc) when is_list(assoc_keys) do
+    Enum.reduce(assoc_keys, acc, &subscribe_events_assocs(parent, &1, &2))
+    |> List.flatten()
+  end
 
-  defp flat_map_assocs(nil, _, _, acc), do: acc
+  defp subscribe_events_assocs(nil, _, acc), do: acc
 
-  defp flat_map_assocs(parent, assoc_keys, func, acc) when is_struct(parent) do
+  defp subscribe_events_assocs(parent, true, acc) when is_struct(parent) do
+    walk_preloaded_assocs(parent, acc, fn key, assoc_info, assoc, acc ->
+      IO.inspect(assoc_info)
+      subscribe_events(parent, assoc_info) ++ subscribe_events(assoc) ++ acc
+    end)
+    |> Enum.filter(fn
+      [] -> false
+      _ -> true
+    end)
+  end
+
+  defp subscribe_events_assocs(parent, assoc_keys, acc) when is_struct(parent) do
     {key, nested} =
       case assoc_keys do
         {_, _} -> assoc_keys
         key -> {key, nil}
       end
 
-    schema =
-      get_schema(parent)
+    opts = [assocs: nested]
 
-    assoc_info =
-      schema.__schema__(:association, key)
+    schema = get_schema(parent)
+    assoc_info = schema.__schema__(:association, key)
 
     parent
     |> Map.get(key)
@@ -231,13 +241,27 @@ defmodule EctoSync.Subscriber do
       nil ->
         acc
 
-      value when is_list(value) or not is_struct(value, Association.NotLoaded) ->
-        acc = [func.(parent, assoc_info) | acc]
+      [] ->
+        events =
+          subscribe_events(parent, assoc_info)
+          |> add_opts(opts)
+          |> IO.inspect(label: :events)
 
-        flat_map_assocs(value, nested, func, acc)
+        events ++ acc
+
+      value when is_list(value) or not is_struct(value, Association.NotLoaded) ->
+        events =
+          subscribe_events(parent, assoc_info)
+          |> add_opts(opts)
+          |> IO.inspect(label: :events)
+
+        subscribe_events_assocs(value, nested, events ++ acc)
 
       _ ->
-        acc = [func.(parent, nil) | acc]
+        events =
+          subscribe_events(parent, nil)
+          |> add_opts(opts)
+          |> IO.inspect(label: :events)
 
         {related, related_key} =
           case assoc_info do
@@ -248,7 +272,13 @@ defmodule EctoSync.Subscriber do
               {related, related_key}
           end
 
-        [{{related, :inserted}, {related_key, primary_key(parent)}} | acc]
+        ([{{related, :inserted}, {related_key, primary_key(parent)}}]
+         |> add_opts(opts)) ++
+          events ++
+          acc
     end
   end
+
+  defp add_opts(list, opts) when is_list(list), do: List.flatten(list) |> Enum.map(&{&1, opts})
+  defp add_opts(tuple, opts), do: {tuple, opts}
 end
