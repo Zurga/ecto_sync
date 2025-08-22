@@ -48,6 +48,7 @@ defmodule EctoSync.Subscriber do
     |> Enum.map(fn {{watcher_identifier, id}, opts} ->
       do_subscribe(watcher_identifier, id, opts)
     end)
+    |> Enum.uniq()
   end
 
   def subscribe(watcher_identifier, id) do
@@ -203,7 +204,8 @@ defmodule EctoSync.Subscriber do
     |> List.flatten()
   end
 
-  defp subscribe_events_assocs(parent, nil, acc), do: [subscribe_events(parent, nil) | acc]
+  defp subscribe_events_assocs(parent, nil, acc),
+    do: [subscribe_events(parent, nil) |> add_opts(assocs: nil) | acc]
 
   defp subscribe_events_assocs(parent, assoc_keys, acc) when is_list(assoc_keys) do
     Enum.reduce(assoc_keys, acc, &subscribe_events_assocs(parent, &1, &2))
@@ -238,10 +240,7 @@ defmodule EctoSync.Subscriber do
     parent
     |> Map.get(key)
     |> case do
-      nil ->
-        acc
-
-      [] ->
+      empty when is_nil(empty) or empty == [] ->
         events =
           subscribe_events(parent, assoc_info)
           |> add_opts(opts)
@@ -249,19 +248,13 @@ defmodule EctoSync.Subscriber do
 
         events ++ acc
 
-      value when is_list(value) or not is_struct(value, Association.NotLoaded) ->
-        events =
-          subscribe_events(parent, assoc_info)
-          |> add_opts(opts)
-          |> IO.inspect(label: :events)
+      %Association.NotLoaded{} ->
+        IO.puts(key)
 
-        subscribe_events_assocs(value, nested, events ++ acc)
-
-      _ ->
-        events =
-          subscribe_events(parent, nil)
-          |> add_opts(opts)
-          |> IO.inspect(label: :events)
+        # events =
+        #   subscribe_events(parent, nil)
+        #   |> add_opts(opts)
+        #   |> IO.inspect(label: :events)
 
         {related, related_key} =
           case assoc_info do
@@ -273,9 +266,17 @@ defmodule EctoSync.Subscriber do
           end
 
         ([{{related, :inserted}, {related_key, primary_key(parent)}}]
-         |> add_opts(opts)) ++
-          events ++
+         |> Enum.map(&add_opts(&1, opts))
+         |> IO.inspect(label: :what)) ++
           acc
+
+      value ->
+        events =
+          subscribe_events(parent, assoc_info)
+          |> add_opts(opts)
+          |> IO.inspect(label: :events)
+
+        subscribe_events_assocs(value, nested, events ++ acc)
     end
   end
 

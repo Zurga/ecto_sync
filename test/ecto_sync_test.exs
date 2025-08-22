@@ -805,6 +805,16 @@ defmodule EctoSyncTest do
       assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
     end
 
+    test "assocs are stored in subscriptions", %{person: person} do
+      subscribe(person, assocs: [posts: [:tags]])
+
+      assert [{self(), [assocs: [posts: [:tags]]]}] ==
+               subscriptions({Person, :updated}, person.id)
+
+      assert [{self(), [assocs: [:tags]]}] ==
+               subscriptions({Post, :inserted}, {:person_id, person.id})
+    end
+
     test "subscriptions are up to date after unsubscribing", %{person: person} do
       subscribe(person)
       assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
