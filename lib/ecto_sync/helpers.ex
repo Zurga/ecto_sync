@@ -134,6 +134,20 @@ defmodule EctoSync.Helpers do
     end
   end
 
+  def walk_preloaded_assocs(value, acc \\ nil, function)
+  def walk_preloaded_assocs([], acc, _function), do: acc
+
+  def walk_preloaded_assocs(list, acc, function) when is_list(list),
+    do: Enum.reduce(list, acc, &walk_preloaded_assocs(&1, &2, function))
+
+  def walk_preloaded_assocs(%{__struct__: schema_mod} = value, acc, function)
+      when is_function(function) do
+    reduce_preloaded_assocs(value, [], fn {key, assoc_info}, struct, acc ->
+      acc = function.(key, assoc_info, struct, acc)
+      walk_preloaded_assocs(struct, acc, function)
+    end)
+  end
+
   # def update_cache(%Config{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
   #   Cachex.del(cache_name, {schema, id})
   #   {:ok, {schema, id}}
