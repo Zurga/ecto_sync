@@ -84,6 +84,15 @@ defmodule EctoSyncTest do
   end
 
   describe "subscribe/3" do
+    test "subscribe to non existing assocs", %{person: person} do
+      assert [
+               {{Person, :deleted}, person.id},
+               {{Person, :updated}, person.id},
+               {{Post, :inserted}, {:person_id, person.id}}
+             ] ==
+               subscribe(person, assocs: [posts: [:tags]])
+    end
+
     test "subscribe to Ecto.Schema struct", %{person_with_posts: %{posts: [post, post2]} = person} do
       assert [
                {{Person, :deleted}, person.id},

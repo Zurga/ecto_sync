@@ -1,7 +1,7 @@
 defmodule EctoSync.Syncer do
   @moduledoc false
   alias EctoSync.PubSub
-  alias EctoSync.Config
+  alias EctoSync.{Config, Subscriber}
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
 
@@ -29,6 +29,20 @@ defmodule EctoSync.Syncer do
     config = Config.new(event, opts)
     do_unsubscribe(config)
     do_sync(value_or_values, config.id, config)
+  end
+
+  def sync(value_or_values, {{schema, :inserted} = watcher, _} = event, opts) do
+    config =
+      Config.new(event, opts)
+
+    # |> IO.inspect(label: :config)
+
+    for id <- config.assocs do
+      subscriptions = Subscriber.subscriptions(watcher, id)
+    end
+    |> IO.inspect()
+
+    # get_preloaded(config.schema, config.id, 
   end
 
   def sync([%{__struct__: schema} | _] = values, {{schema, :inserted}, _} = event, opts) do
