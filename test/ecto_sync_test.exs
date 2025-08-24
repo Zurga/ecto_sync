@@ -119,7 +119,7 @@ defmodule EctoSyncTest do
                {{Post, :updated}, post.id},
                {{Post, :updated}, post2.id}
              ] ==
-               subscribe(person, assocs: [:posts])
+               subscribe(person, assocs: [:posts], inserted: true)
     end
 
     test "subscribe to a list of Ecto.Schema structs", %{

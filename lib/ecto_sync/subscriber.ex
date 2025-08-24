@@ -33,22 +33,19 @@ defmodule EctoSync.Subscriber do
     subscribe_events(value)
     |> add_opts(opts)
     |> Enum.concat(subscribe_events_assocs(value, opts[:assocs] || []))
-    |> IO.inspect(label: :after_sub_assoc)
     |> then(fn events ->
       if opts[:inserted] do
         schema = get_schema(value)
-        Enum.concat(events, {subscribe({schema, :inserted}, nil), opts})
+        [{{{schema, :inserted}, nil}, opts} | events]
       else
         events
       end
     end)
-    |> Enum.uniq()
-    |> Enum.sort()
-    # |> IO.inspect(label: :after_sort)
     |> Enum.map(fn {{watcher_identifier, id}, opts} ->
       do_subscribe(watcher_identifier, id, opts)
     end)
     |> Enum.uniq()
+    |> Enum.sort()
   end
 
   def subscribe(watcher_identifier, id) do
@@ -203,7 +200,7 @@ defmodule EctoSync.Subscriber do
   end
 
   defp subscribe_events_assocs(parent, nil, acc),
-    do: [subscribe_events(parent, nil) |> add_opts(assocs: nil) | acc]
+    do: [subscribe_events(parent, nil) |> add_opts(assocs: []) | acc]
 
   defp subscribe_events_assocs(parent, assoc_keys, acc) when is_list(assoc_keys) do
     Enum.reduce(assoc_keys, acc, &subscribe_events_assocs(parent, &1, &2))
