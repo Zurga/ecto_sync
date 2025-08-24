@@ -119,7 +119,7 @@ defmodule EctoSyncTest do
                {{Post, :updated}, post.id},
                {{Post, :updated}, post2.id}
              ] ==
-               subscribe(person, assocs: [:posts], inserted: true)
+               subscribe(person, assocs: [:posts])
     end
 
     test "subscribe to a list of Ecto.Schema structs", %{
@@ -174,6 +174,40 @@ defmodule EctoSyncTest do
   end
 
   describe "feature: automatic subscription on insert" do
+    @preloads [posts: [:tags, :labels]]
+    test "inserted", %{person: person} do
+      subscribe(person, assocs: @preloads)
+
+      {:ok, %{tags: [tag]} = post} =
+        TestRepo.insert(%Post{person_id: person.id, tags: [%{name: "test"}]})
+        |> do_preload([:tags])
+
+      receive do
+        {{Post, :inserted}, _} = sync_args ->
+          person = do_preload(person, @preloads)
+          synced = EctoSync.sync(person, sync_args)
+          assert synced == person
+      after
+        500 ->
+          raise "no inserts"
+      end
+
+      {:ok, _} =
+        Ecto.Changeset.change(tag, %{name: "updated"})
+        |> TestRepo.update()
+
+      receive do
+        {{Tag, :updated}, _} = sync_args ->
+          person = do_preload(person, @preloads)
+          synced = EctoSync.sync(person, sync_args)
+          assert synced == person
+      after
+        500 ->
+          raise "no updates for tag"
+      end
+
+      assert flush() == []
+    end
   end
 
   describe "integrations" do

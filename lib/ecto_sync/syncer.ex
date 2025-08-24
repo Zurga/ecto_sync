@@ -35,14 +35,20 @@ defmodule EctoSync.Syncer do
     config =
       Config.new(event, opts)
 
-    # |> IO.inspect(label: :config)
+    preloads =
+      for id <- config.assocs, {_, [assocs: assoc]} <- Subscriber.subscriptions(watcher, id) do
+        assoc
+      end
+      |> List.flatten()
+      |> normalize_to_preloads()
+      |> nested_sort()
+      |> IO.inspect(label: :preloads)
 
-    for id <- config.assocs do
-      subscriptions = Subscriber.subscriptions(watcher, id)
-    end
-    |> IO.inspect()
+    new = get_preloaded(config.schema, config.id, preloads, config)
 
-    # get_preloaded(config.schema, config.id, 
+    Subscriber.subscribe(new, assocs: preloads)
+
+    do_sync(value_or_values, new, config)
   end
 
   def sync([%{__struct__: schema} | _] = values, {{schema, :inserted}, _} = event, opts) do
@@ -375,4 +381,16 @@ defmodule EctoSync.Syncer do
 
     (truthy? && match_where?(struct, conditions)) || false
   end
+
+  defp normalize_to_preloads([]), do: []
+
+  defp normalize_to_preloads([k | rest]) when is_atom(k),
+    do: [{k, []} | normalize_to_preloads(rest)]
+
+  defp normalize_to_preloads([{k, v} | rest]) when is_list(v),
+    do: [{k, v} | normalize_to_preloads(rest)]
+
+  defp nested_sort([]), do: []
+  defp nested_sort([{k, v} | rest]), do: [{k, nested_sort(v)} | nested_sort(rest)]
+  defp nested_sort(list), do: Enum.sort(list)
 end

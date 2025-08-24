@@ -44,7 +44,7 @@ defmodule EctoSync.Subscriber do
     end)
     |> Enum.uniq()
     |> Enum.sort()
-    |> IO.inspect(label: :after_sort)
+    # |> IO.inspect(label: :after_sort)
     |> Enum.map(fn {{watcher_identifier, id}, opts} ->
       do_subscribe(watcher_identifier, id, opts)
     end)
@@ -98,7 +98,7 @@ defmodule EctoSync.Subscriber do
   def subscribe_events(struct, %HasThrough{through: [k | through]}),
     do:
       subscribe_events_assocs(
-        Map.get(struct, k) |> IO.inspect(label: :assoc),
+        Map.get(struct, k),
         through |> IO.inspect(label: :throug)
       )
 
@@ -180,12 +180,10 @@ defmodule EctoSync.Subscriber do
 
   def unsubscribe(value, opts) when is_struct(value) do
     subscribe_events(value)
-    |> Enum.concat(
-      subscribe_events_assocs(value, opts[:assocs] || [], fn parent, assoc_info ->
-        subscribe_events(parent, assoc_info)
-      end)
-    )
-    |> Enum.map(fn {watcher_identifier, id} = event ->
+    |> add_opts(opts)
+    |> Enum.concat(subscribe_events_assocs(value, opts[:assocs] || []))
+    # |> IO.inspect(label: :unsubs)
+    |> Enum.map(fn {{watcher_identifier, id} = event, _} ->
       unsubscribe(watcher_identifier, id)
       event
     end)
@@ -216,7 +214,6 @@ defmodule EctoSync.Subscriber do
 
   defp subscribe_events_assocs(parent, true, acc) when is_struct(parent) do
     walk_preloaded_assocs(parent, acc, fn key, assoc_info, assoc, acc ->
-      IO.inspect(assoc_info)
       subscribe_events(parent, assoc_info) ++ subscribe_events(assoc) ++ acc
     end)
     |> Enum.filter(fn
@@ -228,11 +225,12 @@ defmodule EctoSync.Subscriber do
   defp subscribe_events_assocs(parent, assoc_keys, acc) when is_struct(parent) do
     {key, nested} =
       case assoc_keys do
+        {key, []} -> {key, nil}
         {_, _} -> assoc_keys
         key -> {key, nil}
       end
 
-    opts = [assocs: nested]
+    opts = [assocs: nested || []]
 
     schema = get_schema(parent)
     assoc_info = schema.__schema__(:association, key)
@@ -266,15 +264,15 @@ defmodule EctoSync.Subscriber do
           end
 
         ([{{related, :inserted}, {related_key, primary_key(parent)}}]
-         |> Enum.map(&add_opts(&1, opts))
-         |> IO.inspect(label: :what)) ++
+         |> Enum.map(&add_opts(&1, opts))) ++
           acc
 
       value ->
         events =
           subscribe_events(parent, assoc_info)
           |> add_opts(opts)
-          |> IO.inspect(label: :events)
+
+        # |> IO.inspect(label: :events)
 
         subscribe_events_assocs(value, nested, events ++ acc)
     end
