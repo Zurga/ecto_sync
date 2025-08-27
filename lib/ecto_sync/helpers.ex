@@ -66,7 +66,11 @@ defmodule EctoSync.Helpers do
         get_fun: get_fun,
         preloads: preloads
       }) do
-    preloads = Map.get(preloads || %{}, schema, [])
+    preloads =
+      Map.get(preloads || %{}, schema, [])
+      |> IO.inspect(label: :preloads)
+      |> normalize_to_preloads()
+      |> nested_sort()
 
     key =
       List.to_tuple([schema, id] ++ [ref] ++ [preloads])
@@ -148,6 +152,26 @@ defmodule EctoSync.Helpers do
     end)
   end
 
+  def normalize_to_preloads([]), do: []
+
+  def normalize_to_preloads(k) when is_atom(k), do: [k]
+
+  def normalize_to_preloads(map) when is_map(map) do
+    Enum.reduce(map, %{}, fn
+      {k, v}, acc ->
+        Map.put(acc, k, normalize_to_preloads(v))
+    end)
+  end
+
+  def normalize_to_preloads([k | rest]) when is_atom(k),
+    do: [{k, []} | normalize_to_preloads(rest)]
+
+  def normalize_to_preloads([{k, v} | rest]) when is_list(v),
+    do: [{k, v} | normalize_to_preloads(rest)]
+
+  def nested_sort([]), do: []
+  def nested_sort([{k, v} | rest]), do: [{k, nested_sort(v)} | nested_sort(rest)]
+  def nested_sort(list), do: Enum.sort(list)
   # def update_cache(%Config{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
   #   Cachex.del(cache_name, {schema, id})
   #   {:ok, {schema, id}}

@@ -1,6 +1,7 @@
 defmodule EctoSync.Config do
   @moduledoc false
 
+  alias EctoSync.Helpers
   import Ecto.Query
 
   @type t :: %__MODULE__{}
@@ -60,7 +61,12 @@ defmodule EctoSync.Config do
     global =
       Map.take(state, ~w/cache_name edge_fields graph join_modules pub_sub repo/a)
 
-    {%__MODULE__{id: id, ref: ref, assocs: assocs, preloads: opts[:preloads]}
+    {%__MODULE__{
+       id: id,
+       ref: ref,
+       assocs: assocs,
+       preloads: (opts[:preloads] || %{}) |> Helpers.normalize_to_preloads()
+     }
      |> Map.merge(global), state}
   end
 
