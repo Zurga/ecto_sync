@@ -209,7 +209,11 @@ defmodule EctoSync do
   @type syncable() :: term() | Ecto.Schema.t() | list(Ecto.Schema.t())
   @spec sync(syncable(), {{struct(), atom()}, {integer() | String.t(), reference()}}) ::
           syncable()
-  defdelegate sync(value, sync_config, opts \\ []), to: Syncer
+  def sync(value, sync_config, opts \\ [])
+      when is_list(value) or is_struct(value) or is_nil(value) or is_map(value),
+      do: Syncer.sync(value, sync_config, opts)
+
+  def sync(value, _sync_config, _opts), do: value
 
   @doc """
   Unsubscribe the current process from events. Possible inputs are:
