@@ -15,7 +15,6 @@ defmodule EctoSync.Subscriber do
     |> Enum.flat_map(&subscribe(&1, opts))
     |> add_opts(opts)
     |> Enum.uniq()
-    |> IO.inspect()
     |> Enum.map(fn {{watcher_identifier, id}, opts} ->
       do_subscribe(watcher_identifier, id, opts)
     end)
@@ -96,7 +95,7 @@ defmodule EctoSync.Subscriber do
     do:
       subscribe_events_assocs(
         Map.get(struct, k),
-        through |> IO.inspect(label: :throug)
+        through
       )
 
   def subscribe_events(struct, %ManyToMany{
@@ -179,7 +178,6 @@ defmodule EctoSync.Subscriber do
     subscribe_events(value)
     |> add_opts(opts)
     |> Enum.concat(subscribe_events_assocs(value, opts[:assocs] || []))
-    # |> IO.inspect(label: :unsubs)
     |> Enum.map(fn {{watcher_identifier, id} = event, _} ->
       unsubscribe(watcher_identifier, id)
       event
@@ -239,13 +237,10 @@ defmodule EctoSync.Subscriber do
         events =
           subscribe_events(parent, assoc_info)
           |> add_opts(opts)
-          |> IO.inspect(label: :events)
 
         events ++ acc
 
       %Association.NotLoaded{} ->
-        IO.puts(key)
-
         # events =
         #   subscribe_events(parent, nil)
         #   |> add_opts(opts)

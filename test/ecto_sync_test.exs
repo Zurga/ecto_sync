@@ -178,9 +178,8 @@ defmodule EctoSyncTest do
     test "inserted", %{person: person} do
       subscribe(person, assocs: @preloads)
 
-      {:ok, %{tags: [tag]} = post} =
+      {:ok, %{tags: [tag]}} =
         TestRepo.insert(%Post{person_id: person.id, tags: [%{name: "test"}]})
-        |> do_preload([:tags])
 
       receive do
         {{Post, :inserted}, _} = sync_args ->
@@ -651,20 +650,14 @@ defmodule EctoSyncTest do
     end
 
     test "updated", %{person_with_posts: person} do
-      %{posts: [post | _]} =
-        person =
-        do_preload(person, @preloads)
-        |> IO.inspect()
+      %{posts: [post | _]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: @preloads)
-      |> IO.inspect(label: :subscriptions)
 
       {:ok, _} =
-        Ecto.Changeset.change(post, %{name: "test"})
+        post
+        |> Ecto.Changeset.change(%{name: "test"})
         |> TestRepo.update()
-
-      # flush()
-      # |> IO.inspect()
 
       receive do
         {{Post, :updated}, _} = sync_args ->
