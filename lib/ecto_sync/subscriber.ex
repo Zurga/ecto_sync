@@ -40,6 +40,7 @@ defmodule EctoSync.Subscriber do
         events
       end
     end)
+    |> merge_assocs()
     |> Enum.map(fn {{watcher_identifier, id}, opts} ->
       do_subscribe(watcher_identifier, id, opts)
     end)
@@ -60,7 +61,12 @@ defmodule EctoSync.Subscriber do
 
     if self() not in pids do
       Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
-      Registry.register(EventRegistry, {encoded_identifier, id}, opts)
+
+      Registry.register(
+        EventRegistry,
+        {encoded_identifier, id},
+        opts
+      )
 
       EctoWatch.subscribe(encoded_identifier, id)
     end
@@ -86,17 +92,20 @@ defmodule EctoSync.Subscriber do
     parent_id = primary_key(struct)
     assoc_field = {related_key, parent_id}
     assocs = Map.get(struct, field)
-
-    [{{schema, :inserted}, assoc_field} | subscribe_events(struct)] ++
-      [Enum.map(assocs, &subscribe_events/1)]
+    # | subscribe_events(struct)
+    [{{schema, :inserted}, assoc_field}] ++ [Enum.map(assocs, &subscribe_events/1)]
   end
 
-  def subscribe_events(struct, %HasThrough{through: [k | through]}),
-    do:
-      subscribe_events_assocs(
-        Map.get(struct, k),
-        through
-      )
+  def subscribe_events(struct, %HasThrough{through: through} = assoc) do
+    preloads =
+      through
+      |> Enum.reverse()
+      |> Enum.reduce([], fn k, acc ->
+        [{k, acc}]
+      end)
+
+    subscribe_events_assocs(struct, preloads)
+  end
 
   def subscribe_events(struct, %ManyToMany{
         join_through: join_through,
@@ -264,12 +273,26 @@ defmodule EctoSync.Subscriber do
           subscribe_events(parent, assoc_info)
           |> add_opts(opts)
 
-        # |> IO.inspect(label: :events)
-
         subscribe_events_assocs(value, nested, events ++ acc)
     end
   end
 
-  defp add_opts(list, opts) when is_list(list), do: List.flatten(list) |> Enum.map(&{&1, opts})
+  defp add_opts(list, opts) when is_list(list),
+    do: List.flatten(list) |> Enum.map(&add_opts(&1, opts))
+
+  defp add_opts({{{_, _}, _}, _} = tuple, _opts), do: tuple
   defp add_opts(tuple, opts), do: {tuple, opts}
+
+  defp merge_assocs(watchers) do
+    watchers
+    |> Enum.group_by(fn {identifier_id, _opts} -> identifier_id end, fn {_, opts} -> opts end)
+    |> Enum.map(fn {watcher_identifier, opts} ->
+      opts =
+        Enum.reduce(opts, [], fn opt, acc ->
+          kw_deep_merge(acc, opt)
+        end)
+
+      {watcher_identifier, opts}
+    end)
+  end
 end

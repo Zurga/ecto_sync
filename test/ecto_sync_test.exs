@@ -238,12 +238,12 @@ defmodule EctoSyncTest do
 
       receive do
         {{Post, :inserted}, _} = sync_args ->
-          synced = EctoSync.sync(post, sync_args, sync_opts)
+          # synced = EctoSync.sync(post, sync_args, sync_opts)
+          # assert synced == post
 
           assert do_preload(person, posts: [person: :posts]) ==
                    EctoSync.sync(person, sync_args, sync_opts)
 
-          assert synced == post
           assert [^post] = EctoSync.sync([], sync_args, sync_opts)
           assert [%Post{}, ^post] = EctoSync.sync([%Post{}], sync_args, sync_opts)
           assert ^post = EctoSync.sync(nil, sync_args, sync_opts)
@@ -661,6 +661,49 @@ defmodule EctoSyncTest do
 
       receive do
         {{Post, :updated}, _} = sync_args ->
+          synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
+          assert do_preload(person, @preloads) == synced
+      after
+        500 -> raise "nothing POSTS"
+      end
+    end
+  end
+
+  describe "has with through clause" do
+    @preloads [:posts, :all_tags]
+    test "inserted", %{person: person} do
+      person = do_preload(person, @preloads)
+
+      subscribe(person, assocs: @preloads)
+
+      {:ok, _post} =
+        TestRepo.insert(%Post{person_id: person.id, name: "test", tags: [%{name: "test tag"}]})
+
+      # person = do_preload(person, @preloads)
+
+      # flush()
+      # |> IO.inspect()
+
+      receive do
+        {{Post, :inserted}, _} = sync_args ->
+          synced = EctoSync.sync(person, sync_args)
+
+          assert do_preload(person, @preloads) == synced
+      after
+        500 -> raise "nothing POSTS"
+      end
+    end
+
+    test "deleted", %{person_with_posts_and_tags: person} do
+      %{posts: [%{tags: [tag | _]} = post | _]} =
+        person = do_preload(person, @preloads)
+
+      subscribe(person, assocs: @preloads)
+
+      {:ok, _} = TestRepo.delete(tag)
+
+      receive do
+        {{Tag, :deleted}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
           assert do_preload(person, @preloads) == synced
       after

@@ -2,7 +2,7 @@ defmodule EctoSync.Syncer do
   @moduledoc false
   alias EctoSync.PubSub
   alias EctoSync.{Config, Subscriber}
-  alias Ecto.Association.{BelongsTo, Has, ManyToMany}
+  alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
   import EctoSync.Helpers
 
   def sync(from_cache_or_value, event, opts \\ [])
@@ -41,11 +41,27 @@ defmodule EctoSync.Syncer do
       |> Enum.concat(config.preloads[schema] || [])
       |> List.flatten()
 
-    new = get_preloaded(config.schema, config.id, preloads, config)
+    config = %{
+      config
+      | preloads: Map.update(config.preloads, schema, preloads, &kw_deep_merge(&1, preloads))
+    }
+
+    new =
+      get_preloaded(config.schema, config.id, preloads, config)
+      |> IO.inspect(label: :gotten)
 
     Subscriber.subscribe(new, assocs: preloads)
 
-    do_sync(value_or_values, new, config)
+    value_or_values =
+      do_sync(value_or_values, new, config)
+      |> IO.inspect(label: :after_sync)
+
+    # reduce_preloaded_assocs(new, value_or_values, fn key, struct, acc ->
+    #   struct
+    #   |> IO.inspect(label: :other)
+    #   |> List.wrap()
+    #   |> Enum.reduce(acc, &do_sync(&2, &1, config))
+    # end)
   end
 
   def sync(value_or_values, event, opts) do
@@ -148,8 +164,13 @@ defmodule EctoSync.Syncer do
     end)
   end
 
+  defp deep_update(value, {_key, []} = path, new, config) when is_list(new) do
+    Enum.reduce(new, value, &deep_update(&2, path, &1, config))
+  end
+
   defp deep_update(value, {key, []}, new, %{schema: schema} = config) do
     value_schema = get_schema(value)
+
     assoc_info = value_schema.__schema__(:association, key)
 
     Map.update!(value, key, fn
@@ -158,6 +179,29 @@ defmodule EctoSync.Syncer do
 
       assoc ->
         case {assoc_info, assoc} do
+          {%HasThrough{through: through}, assocs} ->
+            case config.event do
+              :inserted ->
+                cond do
+                  is_list(assocs) and is_nil(find_by_primary_key(assocs, new)) ->
+                    assocs ++ [new]
+
+                  is_list(assocs) ->
+                    assocs
+
+                  true ->
+                    new
+                end
+
+              :updated ->
+                if is_list(assocs) do
+                  possible_index = find_by_primary_key(assocs, new)
+                  List.replace_at(assocs, possible_index, new)
+                else
+                  new
+                end
+            end
+
           {%Has{field: key, where: where}, assocs} ->
             possible_index = find_by_primary_key(assocs, new)
             related_id = Map.get(new, assoc_info.related_key)

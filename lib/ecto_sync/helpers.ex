@@ -68,7 +68,7 @@ defmodule EctoSync.Helpers do
       }) do
     preloads =
       Map.get(preloads || %{}, schema, [])
-      |> IO.inspect(label: :preloads)
+      |> IO.inspect(label: :get_from_cache_preloads)
       |> normalize_to_preloads()
       |> nested_sort()
 
@@ -84,6 +84,18 @@ defmodule EctoSync.Helpers do
 
     value
   end
+
+  def kw_deep_merge([{k1, v1} | list1], [{k1, v2} | list2]) do
+    [{k1, kw_deep_merge(v1, v2)} | kw_deep_merge(list1, list2)]
+  end
+
+  def kw_deep_merge([{k1, v1} | list1], [{k2, v2} | list2]) do
+    [{k1, v1}, {k2, v2} | kw_deep_merge(list1, list2)]
+  end
+
+  def kw_deep_merge([], list), do: list
+  def kw_deep_merge(list, []), do: list
+  def kw_deep_merge(list, list), do: list
 
   def primary_key(%{__struct__: schema_mod} = value) when is_struct(value) do
     primary_key(schema_mod)
