@@ -5,37 +5,30 @@ defmodule EctoSync.Syncer do
   alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
   import EctoSync.Helpers
 
-  def sync(from_cache_or_value, event, opts \\ [])
+  def sync(from_cache_or_value, config)
 
-  def sync(:cached, {{_, :deleted}, _} = event, opts) do
-    event
-    |> Config.new(opts)
-    |> do_unsubscribe()
+  def sync(:cached, %{event: :deleted} = config) do
+    do_unsubscribe(config)
   end
 
-  def sync(:cached, {{_, :inserted}, _} = event, opts) do
-    value =
-      event
-      |> Config.new(opts)
-      |> get_from_cache()
+  def sync(:cached, %{event: :inserted} = config) do
+    value = get_from_cache(config)
 
     EctoSync.subscribe(value)
     value
   end
 
-  def sync(:cached, event, opts), do: Config.new(event, opts) |> get_from_cache()
+  def sync(:cached, config), do: get_from_cache(config)
 
-  def sync(value_or_values, {{_, :deleted}, _} = event, opts) do
-    config = Config.new(event, opts)
+  def sync(value_or_values, %{event: :deleted} = config) do
     do_unsubscribe(config)
     do_sync(value_or_values, config.id, config)
   end
 
-  def sync(value_or_values, {{schema, :inserted} = watcher, _} = event, opts) do
-    config = Config.new(event, opts)
-
+  def sync(value_or_values, %{schema: schema, event: :inserted} = config) do
     preloads =
-      for id <- config.assocs, {_, [assocs: assoc]} <- Subscriber.subscriptions(watcher, id) do
+      for id <- config.assocs,
+          {_, [assocs: assoc]} <- Subscriber.subscriptions({schema, :inserted}, id) do
         assoc
       end
       |> Enum.concat(config.preloads[schema] || [])
@@ -46,27 +39,32 @@ defmodule EctoSync.Syncer do
       | preloads: Map.update(config.preloads, schema, preloads, &kw_deep_merge(&1, preloads))
     }
 
-    new =
-      get_preloaded(config.schema, config.id, preloads, config)
-      |> IO.inspect(label: :gotten)
+    new = get_preloaded(config.schema, config.id, preloads, config)
 
     Subscriber.subscribe(new, assocs: preloads)
 
     value_or_values =
       do_sync(value_or_values, new, config)
       |> IO.inspect(label: :after_sync)
+      |> maybe_update_has_through(new, config)
 
     # reduce_preloaded_assocs(new, value_or_values, fn key, struct, acc ->
-    #   struct
-    #   |> IO.inspect(label: :other)
-    #   |> List.wrap()
-    #   |> Enum.reduce(acc, &do_sync(&2, &1, config))
+    #   if not same_record?(struct, value_or_values) do
+    #     struct
+    #     |> IO.inspect(label: :other)
+    #     |> List.wrap()
+    #     |> Enum.reduce(
+    #       acc,
+    #       &(do_sync(IO.inspect(&2, label: :val), IO.inspect(&1, label: :input), config)
+    #         |> IO.inspect(label: :reducing))
+    #     )
+    #   else
+    #     acc
+    #   end
     # end)
   end
 
-  def sync(value_or_values, event, opts) do
-    config = Config.new(event, opts)
-
+  def sync(value_or_values, config) do
     new = get_from_cache(config)
 
     do_sync(value_or_values, new, config)
@@ -107,7 +105,7 @@ defmodule EctoSync.Syncer do
   end
 
   defp do_sync(%{__struct__: value_schema} = value, new, %{schema: schema} = config) do
-    case Map.get(config.join_modules, schema) do
+    case Map.get(config.schemas.join_modules, schema) do
       nil ->
         value_schema
         |> path_to(schema, config)
@@ -120,6 +118,26 @@ defmodule EctoSync.Syncer do
           record = get_preloaded(child, id, [], config)
           do_sync(acc, record, config)
         end)
+    end
+  end
+
+  defp maybe_update_has_through(value_or_values, new, config) do
+    # For each preloaded assoc, check if there is another schema that has it as a HasThrough. If so, update that association based on its path for the assoc
+
+    if is_list(value_or_values) do
+      Enum.map(value_or_values, fn value ->
+        walk_preloaded_assocs(new, value, fn _, _, struct, acc ->
+          do_sync(acc, struct, config)
+        end)
+      end)
+    else
+      walk_preloaded_assocs(new, value_or_values, fn _, _, struct, acc ->
+        if is_list(struct) do
+          Enum.reduce(struct, acc, &do_sync(&2, &1, config))
+        else
+          do_sync(acc, struct, config)
+        end
+      end)
     end
   end
 
@@ -173,82 +191,7 @@ defmodule EctoSync.Syncer do
 
     assoc_info = value_schema.__schema__(:association, key)
 
-    Map.update!(value, key, fn
-      %Ecto.Association.NotLoaded{} = not_loaded ->
-        not_loaded
-
-      assoc ->
-        case {assoc_info, assoc} do
-          {%HasThrough{through: through}, assocs} ->
-            case config.event do
-              :inserted ->
-                cond do
-                  is_list(assocs) and is_nil(find_by_primary_key(assocs, new)) ->
-                    assocs ++ [new]
-
-                  is_list(assocs) ->
-                    assocs
-
-                  true ->
-                    new
-                end
-
-              :updated ->
-                if is_list(assocs) do
-                  possible_index = find_by_primary_key(assocs, new)
-                  List.replace_at(assocs, possible_index, new)
-                else
-                  new
-                end
-            end
-
-          {%Has{field: key, where: where}, assocs} ->
-            possible_index = find_by_primary_key(assocs, new)
-            related_id = Map.get(new, assoc_info.related_key)
-            owner_id = Map.get(value, assoc_info.owner_key)
-
-            in_where = match_where?(new, where)
-
-            cond do
-              # Maybe we are removed as assoc
-              not is_nil(possible_index) and related_id != owner_id and
-                  assoc_info.related == schema ->
-                # Broadcast an insert to the new owner
-                label = :persistent_term.get({EctoSync, {schema, :inserted}})
-
-                PubSub.broadcast(
-                  :"Elixir.#{config.pub_sub}.Adapter",
-                  "ew_for_#{label}|#{assoc_info.related_key}|#{related_id}",
-                  {label, %{:id => new.id, assoc_info.related_key => related_id}},
-                  nil
-                )
-
-                List.delete_at(assocs, possible_index)
-
-              # Maybe we are assigned as assoc
-              is_nil(possible_index) and related_id == owner_id and
-                  assoc_info.related == schema ->
-                if in_where do
-                  do_insert(value, key, assocs, new, config)
-                else
-                  assocs
-                end
-
-              true ->
-                maybe_update(assocs, new, config)
-            end
-
-          {_, assoc} ->
-            {related?, resolved} =
-              resolve_assoc(assoc_info, value, new, config)
-
-            if related? and config.event == :inserted do
-              do_insert(value, key, assoc, resolved, config)
-            else
-              maybe_update(assoc, new, config)
-            end
-        end
-    end)
+    Map.update!(value, key, &assoc_update(value, &1, new, assoc_info, config))
   end
 
   defp deep_update(value, {key, nested}, new, config),
@@ -259,6 +202,83 @@ defmodule EctoSync.Syncer do
 
   defp maybe_update(values, new, config) when is_list(values),
     do: Enum.map(values, &maybe_update(&1, new, config)) |> Enum.reject(&is_nil/1)
+
+  defp assoc_update(_, %Ecto.Association.NotLoaded{} = not_loaded, _, _, _), do: not_loaded
+
+  defp assoc_update(_value, assocs, new, %HasThrough{}, %{event: :inserted} = config)
+       when is_list(assocs) do
+    if is_nil(find_by_primary_key(assocs, new)) do
+      assocs ++ [new]
+    else
+      assocs
+    end
+  end
+
+  defp assoc_update(_value, _assoc, new, %HasThrough{}, %{event: :inserted}),
+    do: new
+
+  defp assoc_update(_value, assocs, new, %HasThrough{}, %{event: :updated} = config) do
+    if is_list(assocs) do
+      possible_index = find_by_primary_key(assocs, new)
+      List.replace_at(assocs, possible_index, new)
+    else
+      new
+    end
+  end
+
+  defp assoc_update(
+         value,
+         assocs,
+         new,
+         %Has{field: key, where: where} = assoc_info,
+         %{schema: schema} = config
+       ) do
+    possible_index = find_by_primary_key(assocs, new)
+    related_id = Map.get(new, assoc_info.related_key)
+    owner_id = Map.get(value, assoc_info.owner_key)
+
+    in_where = match_where?(new, where)
+
+    cond do
+      # Maybe we are removed as assoc
+      not is_nil(possible_index) and related_id != owner_id and
+          assoc_info.related == schema ->
+        # Broadcast an insert to the new owner
+        # TODO Unsubscribe from the assoc.
+        label = :persistent_term.get({EctoSync, {schema, :inserted}})
+
+        PubSub.broadcast(
+          :"Elixir.#{config.pub_sub}.Adapter",
+          "ew_for_#{label}|#{assoc_info.related_key}|#{related_id}",
+          {label, %{:id => new.id, assoc_info.related_key => related_id}},
+          nil
+        )
+
+        List.delete_at(assocs, possible_index)
+
+      # Maybe we are assigned as assoc
+      is_nil(possible_index) and related_id == owner_id and
+          assoc_info.related == schema ->
+        if in_where do
+          do_insert(assocs, new, config)
+        else
+          assocs
+        end
+
+      true ->
+        maybe_update(assocs, new, config)
+    end
+  end
+
+  defp assoc_update(value, assoc, new, assoc_info, config) do
+    {related?, resolved} = resolve_assoc(assoc_info, value, new, config)
+
+    if related? and config.event == :inserted do
+      do_insert(assoc, resolved, config)
+    else
+      maybe_update(assoc, new, config)
+    end
+  end
 
   defp maybe_update(value, new, config) do
     if same_record?(value, new) do
@@ -281,7 +301,7 @@ defmodule EctoSync.Syncer do
     do_insert(value, new, assoc, resolved, config)
   end
 
-  defp do_insert(_value, _key, assocs, resolved, %{schema: schema} = config)
+  defp do_insert(assocs, resolved, %{schema: schema} = config)
        when is_list(assocs) do
     preloads =
       case assocs do
@@ -304,7 +324,7 @@ defmodule EctoSync.Syncer do
     Enum.map(assocs, &maybe_update(&1, new, config)) ++ [inserted]
   end
 
-  defp do_insert(_value, _key, assoc, new, %{schema: schema} = config) do
+  defp do_insert(assoc, new, %{schema: schema} = config) do
     preloads = find_preloads(config.preloads[schema] || assoc)
 
     new = get_preloaded(schema, new.id, preloads, config)
@@ -399,7 +419,38 @@ defmodule EctoSync.Syncer do
   end
 
   defp path_to(from, to, config) do
-    Map.get(config.graph, {from, to}, [])
+    Map.get(config.schemas.paths, {from, to}, [])
+  end
+
+  defp filter_reachable_paths(paths, struct) do
+    paths
+    |> Enum.filter(fn path ->
+      do_traverse_path(struct, path)
+    end)
+  end
+
+  defp do_traverse_path(struct, [{key, nested} | path]) do
+    value = Map.get(struct, key)
+
+    case value do
+      %Ecto.Association.NotLoaded{} ->
+        false
+
+      [] ->
+        false
+
+      _ ->
+        if nested == [] do
+          true
+        else
+          do_traverse_path(nested, path)
+        end
+    end
+
+    do_traverse_path(struct, path)
+  end
+
+  defp get_with_path(path, struct) do
   end
 
   defp match_where?(_struct, []) do

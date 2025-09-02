@@ -1,7 +1,9 @@
-defmodule EctoSync.Graph do
+defmodule EctoSync.Schemas do
   @moduledoc false
   import EctoSync.Helpers, only: [ecto_schema_mod?: 1, reduce_assocs: 3, resolve_through: 2]
   require Logger
+
+  defstruct ~w/paths join_modules has_through edge_fields/a
 
   def new(modules) do
     modules = Enum.filter(modules, &ecto_schema_mod?/1)
@@ -71,7 +73,7 @@ defmodule EctoSync.Graph do
 
     vertices = Graph.vertices(graph)
 
-    vertex_pairs =
+    paths =
       for v <- vertices, v2 <- vertices, reduce: %{} do
         acc ->
           if v != v2 and not is_nil(Graph.get_shortest_path(graph, v, v2)) do
@@ -85,7 +87,7 @@ defmodule EctoSync.Graph do
           end
       end
 
-    {vertex_pairs, join_modules, edge_fields}
+    %__MODULE__{paths: paths, join_modules: join_modules, edge_fields: edge_fields}
   end
 
   defp normalize_path([_], _, _, acc) do

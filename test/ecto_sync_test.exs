@@ -695,16 +695,18 @@ defmodule EctoSyncTest do
     end
 
     test "deleted", %{person_with_posts_and_tags: person} do
-      %{posts: [%{tags: [tag | _]} = post | _]} =
-        person = do_preload(person, @preloads)
+      %{posts: [%{tags: [tag | _tags]} = post | _]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: @preloads)
 
-      {:ok, _} = TestRepo.delete(tag)
+      TestRepo.delete(tag)
 
       receive do
         {{Tag, :deleted}, _} = sync_args ->
-          synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
+          synced =
+            EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
+            |> IO.inspect()
+
           assert do_preload(person, @preloads) == synced
       after
         500 -> raise "nothing POSTS"

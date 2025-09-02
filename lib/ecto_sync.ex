@@ -14,14 +14,11 @@ defmodule EctoSync do
             repo: nil,
             cache_name: nil,
             watchers: [],
-            schemas: [],
-            graph: nil,
-            join_modules: nil,
-            edge_fields: nil
+            schemas: nil
 
   use Supervisor
   require Logger
-  alias EctoSync.{PubSub, Subscriber, Syncer}
+  alias EctoSync.{Config, PubSub, Subscriber, Syncer}
 
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
@@ -50,7 +47,7 @@ defmodule EctoSync do
   @impl true
   @doc false
   def init(state) do
-    {vertex_pairs, join_modules, edge_fields} =
+    schemas =
       state.watchers
       |> Enum.map(fn
         {%{table_name: table}, _, _} ->
@@ -60,14 +57,9 @@ defmodule EctoSync do
           elem(tuple, 0)
       end)
       |> Enum.uniq()
-      |> EctoSync.Graph.new()
+      |> EctoSync.Schemas.new()
 
-    :persistent_term.put(__MODULE__, %{
-      state
-      | graph: vertex_pairs,
-        join_modules: join_modules,
-        edge_fields: edge_fields
-    })
+    :persistent_term.put(__MODULE__, %{state | schemas: schemas})
 
     children = [
       {Cachex, state.cache_name},
@@ -209,9 +201,11 @@ defmodule EctoSync do
   @type syncable() :: term() | Ecto.Schema.t() | list(Ecto.Schema.t())
   @spec sync(syncable(), {{struct(), atom()}, {integer() | String.t(), reference()}}) ::
           syncable()
-  def sync(value, sync_config, opts \\ [])
-      when is_list(value) or is_struct(value) or is_nil(value) or is_map(value),
-      do: Syncer.sync(value, sync_config, opts)
+  def sync(value, event, opts \\ [])
+      when is_list(value) or is_struct(value) or is_nil(value) or is_map(value) do
+    config = Config.new(event, opts)
+    Syncer.sync(value, config)
+  end
 
   def sync(value, _sync_config, _opts), do: value
 

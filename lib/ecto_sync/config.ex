@@ -7,12 +7,10 @@ defmodule EctoSync.Config do
   @type t :: %__MODULE__{}
   defstruct assocs: nil,
             cache_name: nil,
-            edge_fields: nil,
             event: nil,
             get_fun: nil,
-            graph: nil,
+            schemas: nil,
             id: nil,
-            join_modules: nil,
             preloads: [],
             pub_sub: nil,
             ref: nil,
@@ -42,7 +40,9 @@ defmodule EctoSync.Config do
         get_fun: fn table, id ->
           filters = [{primary_key, id}]
 
-          from(r in table, select: ^keys, where: ^filters)
+          table
+          |> select([t], ^keys)
+          |> where(^filters)
           |> config.repo.one
         end
     }
@@ -58,8 +58,7 @@ defmodule EctoSync.Config do
 
     state = :persistent_term.get(EctoSync)
 
-    global =
-      Map.take(state, ~w/cache_name edge_fields graph join_modules pub_sub repo/a)
+    global = Map.take(state, ~w/cache_name schemas pub_sub repo/a)
 
     {%__MODULE__{
        id: id,

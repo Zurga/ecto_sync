@@ -75,14 +75,21 @@ defmodule EctoSync.Helpers do
     key =
       List.to_tuple([schema, id] ++ [ref] ++ [preloads])
 
-    {_, value} =
+    fetched =
       Cachex.fetch(cache_name, key, fn _key ->
         {:commit, get_fun.(schema, id) |> repo.preload(preloads, force: true)}
       end)
 
-    # Process.info(self(), :current_stacktrace)
+    case fetched do
+      {ok, value} when ok in ~w/ok commit/a ->
+        value
 
-    value
+      {:error, error} ->
+        Process.info(self(), :current_stacktrace)
+        |> IO.inspect()
+
+        IO.inspect(error, label: :error)
+    end
   end
 
   def kw_deep_merge([{k1, v1} | list1], [{k1, v2} | list2]) do
@@ -158,7 +165,7 @@ defmodule EctoSync.Helpers do
 
   def walk_preloaded_assocs(%{__struct__: schema_mod} = value, acc, function)
       when is_function(function) do
-    reduce_preloaded_assocs(value, [], fn {key, assoc_info}, struct, acc ->
+    reduce_preloaded_assocs(value, acc, fn {key, assoc_info}, struct, acc ->
       acc = function.(key, assoc_info, struct, acc)
       walk_preloaded_assocs(struct, acc, function)
     end)
