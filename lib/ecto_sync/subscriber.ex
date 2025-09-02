@@ -96,7 +96,7 @@ defmodule EctoSync.Subscriber do
     [{{schema, :inserted}, assoc_field}] ++ [Enum.map(assocs, &subscribe_events/1)]
   end
 
-  def subscribe_events(struct, %HasThrough{through: through} = assoc) do
+  def subscribe_events(struct, %HasThrough{through: through}) do
     preloads =
       through
       |> Enum.reverse()
@@ -217,7 +217,7 @@ defmodule EctoSync.Subscriber do
   defp subscribe_events_assocs(nil, _, acc), do: acc
 
   defp subscribe_events_assocs(parent, true, acc) when is_struct(parent) do
-    walk_preloaded_assocs(parent, acc, fn key, assoc_info, assoc, acc ->
+    walk_preloaded_assocs(parent, acc, fn _key, assoc_info, assoc, acc ->
       subscribe_events(parent, assoc_info) ++ subscribe_events(assoc) ++ acc
     end)
     |> Enum.filter(fn

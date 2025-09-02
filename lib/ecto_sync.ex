@@ -202,6 +202,8 @@ defmodule EctoSync do
   @spec sync(syncable(), {{struct(), atom()}, {integer() | String.t(), reference()}}) ::
           syncable()
   def sync(value, event, opts \\ [])
+
+  def sync(value, event, opts)
       when is_list(value) or is_struct(value) or is_nil(value) or is_map(value) do
     config = Config.new(event, opts)
     Syncer.sync(value, config)
