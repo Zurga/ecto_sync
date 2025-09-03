@@ -31,6 +31,7 @@ defmodule EctoSync.Config do
       end)
 
     table = to_string(table)
+
     keys = [primary_key | columns]
 
     %{
@@ -40,7 +41,7 @@ defmodule EctoSync.Config do
         get_fun: fn table, id ->
           filters = [{primary_key, id}]
 
-          table
+          from(table)
           |> select([t], ^keys)
           |> where(^filters)
           |> config.repo.one
