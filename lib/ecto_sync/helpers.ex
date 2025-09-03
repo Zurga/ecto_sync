@@ -100,6 +100,22 @@ defmodule EctoSync.Helpers do
     [{k1, v1}, {k2, v2} | kw_deep_merge(list1, list2)]
   end
 
+  def kw_deep_merge([{k1, v1} | list1], [k1 | list2]) when is_atom(k1) do
+    [{k1, v1} | kw_deep_merge(list1, list2)]
+  end
+
+  def kw_deep_merge([{k1, v1} | list1], [k2 | list2]) when is_atom(k2) do
+    [k2, {k1, v1} | kw_deep_merge(list1, list2)]
+  end
+
+  def kw_deep_merge([k1 | list2], [{k1, v1} | list1]) when is_atom(k1) do
+    [{k1, v1} | kw_deep_merge(list1, list2)]
+  end
+
+  def kw_deep_merge([k2 | list2], [{k1, v1} | list1]) when is_atom(k2) do
+    [k2, {k1, v1} | kw_deep_merge(list1, list2)]
+  end
+
   def kw_deep_merge([], list), do: list
   def kw_deep_merge(list, []), do: list
   def kw_deep_merge(list, list), do: list
