@@ -4,6 +4,7 @@ defmodule EctoSync.Syncer do
   alias EctoSync.{Config, Subscriber}
   alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
   import EctoSync.Helpers
+  import Ecto.Query
 
   def sync(from_cache_or_value, config)
 
@@ -39,12 +40,28 @@ defmodule EctoSync.Syncer do
       | preloads: Map.update(config.preloads, schema, preloads, &kw_deep_merge(&1, preloads))
     }
 
-    new = get_preloaded(config.schema, config.id, preloads, config)
+    if is_binary(schema) do
+      case Map.get(config.schemas.join_modules, schema) do
+        associated_schemas ->
+          associated_schemas
+          |> Enum.reduce(value_or_values, fn {_parent, {key, child}}, acc ->
+            id = config.assocs[key]
 
-    Subscriber.subscribe(new, assocs: preloads)
+            record =
+              get_preloaded(child, id, preloads, config)
 
-    do_sync(value_or_values, new, config)
-    |> maybe_update_has_through(new, config)
+            Subscriber.subscribe(record, assocs: preloads)
+            do_sync(acc, record, config)
+          end)
+      end
+    else
+      new = get_preloaded(config.schema, config.id, preloads, config)
+
+      Subscriber.subscribe(new, assocs: preloads)
+
+      do_sync(value_or_values, new, config)
+      |> maybe_update_has_through(new, config)
+    end
   end
 
   def sync(value_or_values, config) do
@@ -310,8 +327,8 @@ defmodule EctoSync.Syncer do
     repo = config.repo
 
     config =
-      Config.maybe_put_get_fun(config, fn _schema, _id ->
-        repo.get(schema, id) |> repo.preload(preloads, force: true)
+      Config.maybe_put_get_fun(config, fn schema, id ->
+        from(schema, where: [id: ^id]) |> repo.one() |> repo.preload(preloads, force: true)
       end)
 
     get_from_cache(%{config | schema: schema, id: id, preloads: %{schema => preloads}})

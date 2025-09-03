@@ -40,31 +40,37 @@ defmodule EctoSync.Schemas do
       modules
       |> Enum.reduce(
         {[], %{}},
-        fn schema, acc ->
-          reduce_assocs(schema, acc, fn {field, %{owner: from} = assoc}, {edge_acc, field_acc} ->
-            {to, related} =
-              case assoc do
-                %Ecto.Association.ManyToMany{
-                  join_through: join_through,
-                  related: related
-                } ->
-                  {join_through, related}
+        &reduce_assocs(&1, &2, fn {field, %{owner: from} = assoc}, {edge_acc, field_acc} ->
+          {edges, related} =
+            case assoc do
+              %Ecto.Association.ManyToMany{
+                join_through: join_through,
+                join_keys: [{owner_key, _}, _],
+                related: related
+              } ->
+                edges =
+                  if is_binary(join_through) do
+                    [{from, join_through}, {join_through, from}]
+                  else
+                    [{from, join_through}]
+                  end
 
-                %Ecto.Association.HasThrough{through: through} ->
-                  to = resolve_through(schema, through)
+                {edges, related}
 
-                  {to, to}
+              %Ecto.Association.HasThrough{through: through} ->
+                to = resolve_through(schema, through)
 
-                %{related: to} ->
-                  {to, to}
-              end
+                {[{from, to}], to}
 
-            field_acc =
-              Map.update(field_acc, {from, related}, [field], fn fields -> [field | fields] end)
+              %{related: to} ->
+                {[{from, to}], to}
+            end
 
-            {[{from, to} | edge_acc], field_acc}
-          end)
-        end
+          field_acc =
+            Map.update(field_acc, {from, related}, [field], fn fields -> [field | fields] end)
+
+          {edges ++ edge_acc, field_acc}
+        end)
       )
 
     graph =
@@ -104,15 +110,14 @@ defmodule EctoSync.Schemas do
 
     case Map.get(edge_fields, {parent, child}) do
       nil ->
-        raise "no field for edge #{inspect({parent, child})}"
+        acc
 
       fields ->
         Enum.reduce(fields, acc, &Keyword.put(&2, &1, []))
     end
   end
 
-  defp normalize_path([parent, join, child | rest], join_modules, edge_fields, acc)
-       when is_atom(join) do
+  defp normalize_path([parent, join, child | rest], join_modules, edge_fields, acc) do
     {edge, next} =
       if Enum.member?(Map.keys(join_modules), join) do
         {{parent, child}, [child | rest]}
@@ -120,11 +125,15 @@ defmodule EctoSync.Schemas do
         {{parent, join}, [join, child | rest]}
       end
 
-    fields = Map.get(edge_fields, edge)
+    case Map.get(edge_fields, edge) do
+      nil ->
+        acc
 
-    for field <- fields do
-      # fav, posts
-      Keyword.put(acc, field, normalize_path(next, join_modules, edge_fields, []))
+      fields ->
+        for field <- fields do
+          # fav, posts
+          Keyword.put(acc, field, normalize_path(next, join_modules, edge_fields, []))
+        end
     end
   end
 end

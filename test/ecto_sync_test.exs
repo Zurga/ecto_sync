@@ -2,6 +2,7 @@ defmodule EctoSyncTest do
   use EctoSync.RepoCase, async: false
   import EctoSync
   import EctoSync.Helpers
+  require Ecto.Query
 
   @association_columns [:post_id, :label_id]
   @posts_labels_events [
@@ -977,6 +978,39 @@ defmodule EctoSyncTest do
           assert do_preload(person, @preloads) == synced
       after
         500 -> raise "nothing POSTS"
+      end
+    end
+
+    test "updated", %{person_with_posts_and_tags: person} do
+      %{posts: [_post1, %{labels: [label | _]} = post2]} = person = do_preload(person, @preloads)
+
+      subscribe(person, assocs: @preloads)
+
+      {:ok, _} =
+        Ecto.Changeset.change(label, %{name: "updated"})
+        |> TestRepo.update()
+
+      receive do
+        sync_args ->
+          synced = EctoSync.sync(person, sync_args)
+          assert do_preload(person, @preloads) == synced
+      after
+        500 -> raise "nothing POSTS"
+      end
+    end
+
+    test "deleted", %{person_with_posts_and_tags: person} do
+      %{posts: [post1, %{labels: [label | _]}]} = person = do_preload(person, @preloads)
+
+      subscribe(person, assocs: @preloads)
+      TestRepo.delete(label)
+
+      receive do
+        {{label, :deleted}, _} = sync_args ->
+          synced = EctoSync.sync(person, sync_args)
+          assert do_preload(person, @preloads) == synced
+      after
+        500 -> raise "no label delete"
       end
     end
   end
