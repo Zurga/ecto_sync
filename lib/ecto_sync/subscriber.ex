@@ -250,11 +250,6 @@ defmodule EctoSync.Subscriber do
         events ++ acc
 
       %Association.NotLoaded{} ->
-        # events =
-        #   subscribe_events(parent, nil)
-        #   |> add_opts(opts)
-        #   |> IO.inspect(label: :events)
-
         {related, related_key} =
           case assoc_info do
             %ManyToMany{join_keys: [{related_key, _} | _], join_through: related} ->
