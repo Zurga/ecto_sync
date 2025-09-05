@@ -68,7 +68,6 @@ defmodule EctoSync.Helpers do
       }) do
     preloads =
       Map.get(preloads || %{}, schema, [])
-      |> IO.inspect(label: :get_from_cache_preloads)
       |> normalize_to_preloads()
       |> nested_sort()
 
@@ -85,10 +84,7 @@ defmodule EctoSync.Helpers do
         value
 
       {:error, error} ->
-        Process.info(self(), :current_stacktrace)
-        |> IO.inspect()
-
-        IO.inspect(error, label: :error)
+        error
     end
   end
 

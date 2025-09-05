@@ -753,11 +753,6 @@ defmodule EctoSyncTest do
       {:ok, _post} =
         TestRepo.insert(%Post{person_id: person.id, name: "test", tags: [%{name: "test tag"}]})
 
-      # person = do_preload(person, @preloads)
-
-      # flush()
-      # |> IO.inspect()
-
       receive do
         {{Post, :inserted}, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
@@ -779,7 +774,6 @@ defmodule EctoSyncTest do
         {{Tag, :deleted}, _} = sync_args ->
           synced =
             EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
-            |> IO.inspect()
 
           assert do_preload(person, @preloads) == synced
       after
