@@ -58,7 +58,7 @@ defmodule EctoSync.Schemas do
                 {edges, related}
 
               %Ecto.Association.HasThrough{through: through} ->
-                to = resolve_through(schema, through)
+                to = resolve_through(&1, through)
 
                 {[{from, to}], to}
 
