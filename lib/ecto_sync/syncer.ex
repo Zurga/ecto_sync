@@ -261,7 +261,7 @@ defmodule EctoSync.Syncer do
   defp maybe_update_has_through(value_or_values, new, config) do
     # For each preloaded assoc, check if there is another schema that has it as a HasThrough. If so, update that association based on its path for the assoc
     fun = fn value ->
-      walk_preloaded_assocs(new, value_or_values, fn _, _, struct, acc ->
+      walk_preloaded_assocs(new, value, fn _, _, struct, acc ->
         cond do
           is_list(struct) ->
             Enum.reduce(struct, acc, &do_sync(&2, &1, config))

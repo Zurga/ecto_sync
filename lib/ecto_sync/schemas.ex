@@ -45,7 +45,6 @@ defmodule EctoSync.Schemas do
             case assoc do
               %Ecto.Association.ManyToMany{
                 join_through: join_through,
-                join_keys: [{owner_key, _}, _],
                 related: related
               } ->
                 edges =
