@@ -170,7 +170,7 @@ defmodule EctoSync.Helpers do
   end
 
   def walk_preloaded_assocs(value, acc \\ nil, function)
-  def walk_preloaded_assocs([], acc, _function), do: acc
+  def walk_preloaded_assocs(empty, acc, _function) when is_nil(empty) or empty == [], do: acc
 
   def walk_preloaded_assocs(list, acc, function) when is_list(list),
     do: Enum.reduce(list, acc, &walk_preloaded_assocs(&1, &2, function))
