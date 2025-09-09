@@ -62,7 +62,8 @@ defmodule EctoSync.MixProject do
       {:ex_doc, "~> 0.37.2", only: :dev, runtime: false},
       {:credo, "~> 1.6", runtime: false, only: [:dev, :test]},
       {:dialyxir, "~> 1.2", runtime: false, only: [:dev, :test]},
-      {:excoveralls, "~> 0.18.0", runtime: false, only: [:test]}
+      {:excoveralls, "~> 0.18.0", runtime: false, only: [:test]},
+      {:phoenix_live_view, "> 0.18.0", optional: true}
     ]
   end
 

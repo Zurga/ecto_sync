@@ -65,6 +65,7 @@ defmodule EctoSync do
       {Cachex, state.cache_name},
       {Phoenix.PubSub, name: state.pub_sub, adapter: PubSub},
       {EctoWatch, [repo: state.repo, pub_sub: state.pub_sub, watchers: state.watchers]},
+      EctoSync.Telemetry,
       {Registry, keys: :duplicate, name: EventRegistry}
     ]
 

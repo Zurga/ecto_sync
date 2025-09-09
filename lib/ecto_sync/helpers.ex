@@ -81,6 +81,7 @@ defmodule EctoSync.Helpers do
 
     case fetched do
       {ok, value} when ok in ~w/ok commit/a ->
+        EctoSync.Telemetry.stats(schema, ok)
         value
 
       {:error, error} ->

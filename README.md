@@ -3,6 +3,13 @@
 Subscribe to events emitted by EctoWatch, and cache the changed row. Use the `sync` function
 to update an in-memory row or list of rows using the cached version. 
 
+Support roadmap:
+|Relation type|Supported options|
+|-------------|-----------------|
+| `belongs_to`||
+| `has_[one|many]`| `:where`, `:through`|
+
+
 ## Use cases
 ### Schema:
 Post <-> PostsTags <-> Tag
