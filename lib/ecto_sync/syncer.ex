@@ -185,6 +185,10 @@ defmodule EctoSync.Syncer do
 
   defp maybe_update(value, new, config) do
     if same_record?(value, new) do
+      if value != new do
+        new
+      end
+
       preloads = find_preloads(config.preloads[new.__struct__] || value)
 
       get_preloaded(get_schema(value), new.id, preloads, config)
@@ -260,7 +264,8 @@ defmodule EctoSync.Syncer do
   end
 
   defp maybe_update_has_through(value_or_values, new, config) do
-    # For each preloaded assoc, check if there is another schema that has it as a HasThrough. If so, update that association based on its path for the assoc
+    # For each preloaded assoc, check if there is another schema that has it as a HasThrough.
+    # If so, update that association based on its path for the assoc.
     fun = fn value ->
       walk_preloaded_assocs(new, value, fn _, _, struct, acc ->
         cond do
@@ -268,6 +273,8 @@ defmodule EctoSync.Syncer do
             Enum.reduce(struct, acc, &do_sync(&2, &1, config))
 
           is_struct(struct) ->
+            path_to(get_schema(acc), get_schema(struct), config)
+
             do_sync(acc, struct, config)
 
           true ->
