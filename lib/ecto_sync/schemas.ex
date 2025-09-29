@@ -7,75 +7,9 @@ defmodule EctoSync.Schemas do
 
   def new(modules) do
     modules = Enum.filter(modules, &ecto_schema_mod?/1)
-
-    join_modules =
-      modules
-      |> Enum.reduce([], fn module, acc ->
-        reduce_assocs(module, acc, fn
-          {_, assoc}, acc ->
-            case assoc do
-              %Ecto.Association.ManyToMany{
-                join_through: join_through,
-                owner: from,
-                related: to,
-                join_keys: [{from_fk, _}, {to_fk, _}]
-              } ->
-                [
-                  {join_through,
-                   %{
-                     from => {to_fk, to},
-                     to => {from_fk, from}
-                   }}
-                  | acc
-                ]
-
-              _ ->
-                acc
-            end
-        end)
-      end)
-      |> Enum.into(%{})
-
-    {edges, edge_fields} =
-      modules
-      |> Enum.reduce(
-        {[], %{}},
-        &reduce_assocs(&1, &2, fn {field, %{owner: from} = assoc}, {edge_acc, field_acc} ->
-          {edges, related} =
-            case assoc do
-              %Ecto.Association.ManyToMany{
-                join_through: join_through,
-                related: related
-              } ->
-                edges =
-                  if is_binary(join_through) do
-                    [{from, join_through}, {join_through, from}]
-                  else
-                    [{from, join_through}]
-                  end
-
-                {edges, related}
-
-              %Ecto.Association.HasThrough{through: through} ->
-                to = resolve_through(&1, through)
-
-                {[{from, to}], to}
-
-              %{related: to} ->
-                {[{from, to}], to}
-            end
-
-          field_acc =
-            Map.update(field_acc, {from, related}, [field], fn fields -> [field | fields] end)
-
-          {edges ++ edge_acc, field_acc}
-        end)
-      )
-
-    graph =
-      Graph.new()
-      |> Graph.add_edges(edges)
-
+    join_modules = find_join_modules(modules)
+    {edges, edge_fields} = find_edges(modules)
+    graph = Graph.new() |> Graph.add_edges(edges)
     vertices = Graph.vertices(graph)
 
     paths =
@@ -93,6 +27,72 @@ defmodule EctoSync.Schemas do
       end
 
     %__MODULE__{paths: paths, join_modules: join_modules, edge_fields: edge_fields}
+  end
+
+  defp find_join_modules(modules) do
+    modules
+    |> Enum.reduce([], fn module, acc ->
+      reduce_assocs(module, acc, fn
+        {_, assoc}, acc ->
+          case assoc do
+            %Ecto.Association.ManyToMany{
+              join_through: join_through,
+              owner: from,
+              related: to,
+              join_keys: [{from_fk, _}, {to_fk, _}]
+            } ->
+              [
+                {join_through,
+                 %{
+                   from => {to_fk, to},
+                   to => {from_fk, from}
+                 }}
+                | acc
+              ]
+
+            _ ->
+              acc
+          end
+      end)
+    end)
+    |> Enum.into(%{})
+  end
+
+  defp find_edges(modules) do
+    modules
+    |> Enum.reduce(
+      {[], %{}},
+      &reduce_assocs(&1, &2, fn {field, %{owner: from} = assoc}, {edge_acc, field_acc} ->
+        {edges, related} =
+          case assoc do
+            %Ecto.Association.ManyToMany{
+              join_through: join_through,
+              related: related
+            } ->
+              edges =
+                if is_binary(join_through) do
+                  [{from, join_through}, {join_through, from}]
+                else
+                  [{from, join_through}]
+                end
+
+              {edges, related}
+
+            %Ecto.Association.HasThrough{through: through} ->
+              to = resolve_through(&1, through)
+
+              {[{from, to}], to}
+
+            %{related: to} ->
+              {[{from, to}], to}
+          end
+
+        field_acc =
+          Map.update(field_acc, {from, related}, [field], fn fields -> [field | fields] end)
+
+        {edges ++ edge_acc, field_acc}
+      end)
+    )
   end
 
   defp normalize_path([_], _, _, acc) do

@@ -1,6 +1,7 @@
 defmodule EctoSync.Config do
   @moduledoc false
 
+  @derive {Inspect, only: ~w/id ref schema event/a}
   alias EctoSync.Helpers
   import Ecto.Query
 
