@@ -228,11 +228,12 @@ defmodule EctoSync.Syncer do
         # Broadcast an insert to the new owner
         # TODO Unsubscribe from the assoc.
         label = :persistent_term.get({EctoSync, {schema, :inserted}})
+        ref = :erlang.make_ref()
 
         PubSub.broadcast(
           :"Elixir.#{config.pub_sub}.Adapter",
           "ew_for_#{label}|#{assoc_info.related_key}|#{related_id}",
-          {label, %{:id => new.id, assoc_info.related_key => related_id}},
+          {{label, %{:id => new.id, assoc_info.related_key => related_id}}, ref},
           nil
         )
 

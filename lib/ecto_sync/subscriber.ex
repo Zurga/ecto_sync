@@ -3,6 +3,7 @@ defmodule EctoSync.Subscriber do
   require Logger
   import EctoSync.Helpers
 
+  alias EctoSync.Watcher
   alias Ecto.Association
   alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
 
@@ -68,7 +69,7 @@ defmodule EctoSync.Subscriber do
         opts
       )
 
-      EctoWatch.subscribe(encoded_identifier, id)
+      Watcher.subscribe(encoded_identifier, id)
     end
 
     {watcher_identifier, id}
@@ -169,7 +170,7 @@ defmodule EctoSync.Subscriber do
         watcher_identifier
         |> get_encoded_label()
 
-      case EctoWatch.unsubscribe(encoded_identifier, id) do
+      case Watcher.unsubscribe(encoded_identifier, id) do
         :ok -> Registry.unregister(EventRegistry, {encoded_identifier, id})
         error -> error
       end

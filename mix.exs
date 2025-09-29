@@ -56,13 +56,19 @@ defmodule EctoSync.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ecto_watch, "~> 0.13.0"},
       {:cachex, "~> 4.0.3"},
       {:libgraph, "~> 0.16.0"},
       {:ex_doc, "~> 0.37.2", only: :dev, runtime: false},
       {:credo, "~> 1.6", runtime: false, only: [:dev, :test]},
       {:dialyxir, "~> 1.2", runtime: false, only: [:dev, :test]},
-      {:excoveralls, "~> 0.18.0", runtime: false, only: [:test]}
+      {:excoveralls, "~> 0.18.0", runtime: false, only: [:test]},
+      {:nimble_options, "~> 1.1"},
+      {:postgrex, ">= 0.0.0"},
+      {:phoenix_pubsub, ">= 1.0.0"},
+      {:jason, ">= 1.0.0"},
+      {:ecto_sql, ">= 3.0.0"},
+      {:mix_test_watch, "~> 1.0", only: [:dev, :test]},
+      {:mox, "~> 1.2", only: [:dev, :test]}
     ]
   end
 

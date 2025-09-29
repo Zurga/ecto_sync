@@ -18,7 +18,7 @@ defmodule EctoSync do
 
   use Supervisor
   require Logger
-  alias EctoSync.{Config, PubSub, Subscriber, Syncer}
+  alias EctoSync.{Config, PubSub, Subscriber, Syncer, Watcher}
 
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
@@ -64,7 +64,7 @@ defmodule EctoSync do
     children = [
       {Cachex, state.cache_name},
       {Phoenix.PubSub, name: state.pub_sub, adapter: PubSub},
-      {EctoWatch, [repo: state.repo, pub_sub: state.pub_sub, watchers: state.watchers]},
+      {Watcher, [repo: state.repo, pub_sub: state.pub_sub, watchers: state.watchers]},
       {Registry, keys: :duplicate, name: EventRegistry}
     ]
 

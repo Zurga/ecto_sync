@@ -211,22 +211,6 @@ defmodule EctoSyncTest do
   end
 
   describe "integrations" do
-    test "subscribing with EctoWatch also works", %{person: person} do
-      EctoWatch.subscribe(encode_watcher_identifier({Post, :inserted}), nil)
-
-      {:ok, post} = TestRepo.insert(%Post{person_id: person.id})
-
-      receive do
-        {{Post, :inserted}, _} = sync_args ->
-          synced = EctoSync.sync(post, sync_args)
-          assert synced == post
-          assert [^post] = EctoSync.sync([], sync_args)
-      after
-        500 ->
-          raise "no inserts"
-      end
-    end
-
     test "types of sync arguments for insert", %{person: person} do
       assert [{{Post, :inserted}, nil}] == subscribe(Post, :inserted)
       person = do_preload(person, [:posts])

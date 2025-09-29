@@ -1,4 +1,5 @@
 defmodule EctoSync.Helpers do
+  require Logger
   @moduledoc false
   alias EctoSync.Config
 
@@ -86,6 +87,10 @@ defmodule EctoSync.Helpers do
       {:error, error} ->
         error
     end
+  end
+
+  def kw_deep_merge([{k1, v1} | list1], [{k1, v1} | list2]) do
+    [{k1, v1} | kw_deep_merge(list1, list2)]
   end
 
   def kw_deep_merge([{k1, v1} | list1], [{k1, v2} | list2]) do
@@ -229,5 +234,40 @@ defmodule EctoSync.Helpers do
     else
       function.(key, acc)
     end
+  end
+
+  def label(schema_mod_or_label) do
+    if ecto_schema_mod?(schema_mod_or_label) do
+      module_to_label(schema_mod_or_label)
+    else
+      schema_mod_or_label
+    end
+  end
+
+  def module_to_label(module) do
+    module
+    |> Module.split()
+    |> Enum.join("_")
+    |> String.downcase()
+  end
+
+  def validate_list(list, func) when is_list(list) do
+    result =
+      list
+      |> Enum.map(func)
+
+    first_error =
+      result
+      |> Enum.find(&match?({:error, _}, &1))
+
+    first_error || {:ok, Enum.map(result, fn {:ok, value} -> value end)}
+  end
+
+  def validate_list(_, _) do
+    {:error, "should be a list"}
+  end
+
+  def debug_log(watcher_identifier, message) do
+    Logger.debug("EctoSync | #{inspect(watcher_identifier)} | #{inspect(self())} | #{message}")
   end
 end

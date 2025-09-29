@@ -10,7 +10,7 @@ defmodule EctoSync.PubSub do
   def node_name(_), do: node()
 
   @impl true
-  def broadcast(adapter_name, topic, {schema_event, identifiers}, _dispatcher) do
+  def broadcast(adapter_name, topic, {{schema_event, identifiers}, ref}, _dispatcher) do
     schema_event =
       :persistent_term.get({EctoSync, schema_event}, schema_event)
 
@@ -21,8 +21,6 @@ defmodule EctoSync.PubSub do
 
     Registry.dispatch(pubsub, topic, fn entries ->
       if entries != [] do
-        ref = :erlang.make_ref()
-
         for {pid, _} <- entries do
           send(pid, {schema_event, {identifiers, ref}})
         end
