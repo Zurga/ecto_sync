@@ -1,6 +1,5 @@
 defmodule EctoSync.Syncer do
   @moduledoc false
-  alias EctoSync.PubSub
   alias EctoSync.{Config, Subscriber}
   alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
   import EctoSync.Helpers
@@ -231,14 +230,10 @@ defmodule EctoSync.Syncer do
           assoc_info.related == schema ->
         # Broadcast an insert to the new owner
         # TODO Unsubscribe from the assoc.
-        label = :persistent_term.get({EctoSync, {schema, :inserted}})
-        ref = :erlang.make_ref()
-
-        PubSub.broadcast(
-          :"Elixir.#{config.pub_sub}.Adapter",
-          "ew_for_#{label}|#{assoc_info.related_key}|#{related_id}",
-          {{label, %{:id => new.id, assoc_info.related_key => related_id}}, ref},
-          nil
+        EctoSync.Watcher.WatcherServer.broadcast(
+          schema,
+          :inserted,
+          %{:id => new.id, assoc_info.related_key => related_id}
         )
 
         List.delete_at(assocs, possible_index)

@@ -183,7 +183,7 @@ defmodule EctoSyncTest do
         TestRepo.insert(%Post{person_id: person.id, tags: [%{name: "test"}]})
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           person = do_preload(person, @preloads)
           synced = EctoSync.sync(person, sync_args)
           assert synced == person
@@ -197,7 +197,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        {{Tag, :updated}, _} = sync_args ->
+        {EctoSync, {Tag, :updated, _} = sync_args} ->
           person = do_preload(person, @preloads)
           synced = EctoSync.sync(person, sync_args)
           assert synced == person
@@ -222,7 +222,7 @@ defmodule EctoSyncTest do
       sync_opts = [preloads: %{Post => [person: [:posts]]}]
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           # synced = EctoSync.sync(post, sync_args, sync_opts)
           # assert synced == post
 
@@ -263,7 +263,7 @@ defmodule EctoSyncTest do
       # assert [{{Post, :updated}, post_id} ] == subscribe({Post, :updated}, post_id)
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           assert do_preload(person, [:posts]) == EctoSync.sync(person, sync_args)
       end
 
@@ -272,7 +272,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           assert do_preload(person, [:posts]) == EctoSync.sync(person, sync_args)
       after
         500 ->
@@ -300,7 +300,7 @@ defmodule EctoSyncTest do
       expected = TestRepo.preload(person, [:posts], force: true)
 
       receive do
-        {{Post, :deleted}, _} = sync_args ->
+        {EctoSync, {Post, :deleted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert synced == expected
       after
@@ -324,7 +324,7 @@ defmodule EctoSyncTest do
       sort = fn enum -> Enum.sort_by(enum, & &1.id) end
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync([person, person], sync_args)
           assert is_list(synced)
 
@@ -353,7 +353,7 @@ defmodule EctoSyncTest do
         TestRepo.get(Person, person1.id) |> do_preload(preloads)
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person1, sync_args)
           assert person1_expected_after_update == synced
       after
@@ -368,7 +368,7 @@ defmodule EctoSyncTest do
         TestRepo.get(Person, person1.id) |> do_preload(preloads)
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person1_expected_after_update, sync_args)
           assert person1_expected_after_update_2 == synced
       after
@@ -392,7 +392,7 @@ defmodule EctoSyncTest do
       expected = TestRepo.get(Post, post.id) |> do_preload(@preloads)
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(post, sync_args)
           assert expected == synced
       after
@@ -413,14 +413,14 @@ defmodule EctoSyncTest do
       end
 
       receive do
-        {{Person, :deleted}, _} = sync_args ->
+        {EctoSync, {Person, :deleted, _} = sync_args} ->
           synced = EctoSync.sync(post1, sync_args)
           assert do_preload(post1, @preloads) == synced
       after
         500 -> raise "no post update"
       end
 
-      refute_received({{Person, :updated}, _})
+      refute_received({EctoSync, {Person, :updated, _}})
     end
 
     test "update", %{person_with_posts_and_tags: %{posts: [post1 | _]} = person} do
@@ -433,14 +433,14 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        {{Person, :updated}, _} = sync_args ->
+        {EctoSync, {Person, :updated, _} = sync_args} ->
           synced = EctoSync.sync(post1, sync_args)
           assert do_preload(post1, @preloads) == synced
       after
         500 -> raise "no person update"
       end
 
-      refute_received({{Person, :updated}, _})
+      refute_received({EctoSync, {Person, :updated, _}})
     end
 
     test "update assoc is changed", %{
@@ -461,14 +461,14 @@ defmodule EctoSyncTest do
         |> do_preload(@preloads)
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(post1, sync_args)
           assert preloaded == synced
       after
         500 -> raise "no post update"
       end
 
-      refute_received({{Person, :updated}, _})
+      refute_received({EctoSync, {Person, :updated, _}})
     end
 
     test "preloads", %{person: person} do
@@ -477,7 +477,7 @@ defmodule EctoSyncTest do
       {:ok, post} = TestRepo.insert(%Post{person_id: person.id})
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           synced = EctoSync.sync(post, sync_args, preloads: %{Post => :person})
           assert synced == post |> do_preload([:person])
           assert [^post] = EctoSync.sync([], sync_args)
@@ -503,7 +503,7 @@ defmodule EctoSyncTest do
       expected = TestRepo.get(Post, post.id) |> do_preload(preloads)
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(post, sync_args)
           assert expected == synced
       after
@@ -522,7 +522,7 @@ defmodule EctoSyncTest do
       {:ok, _post} = TestRepo.insert(%Post{person_id: person.id})
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
           synced
@@ -541,7 +541,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           %{posts: synced_posts} = EctoSync.sync(person, sync_args)
           %{posts: preloaded_posts} = do_preload(person, @preloads)
           assert preloaded_posts |> Enum.sort() == synced_posts |> Enum.sort()
@@ -558,7 +558,7 @@ defmodule EctoSyncTest do
       {:ok, _} = TestRepo.delete(post1)
 
       receive do
-        {{Post, :deleted}, _} = sync_args ->
+        {EctoSync, {Post, :deleted, _} = sync_args} ->
           %{posts: synced_posts} = EctoSync.sync(person, sync_args)
           %{posts: preloaded_posts} = do_preload(person, @preloads)
           assert preloaded_posts |> Enum.sort() == synced_posts |> Enum.sort()
@@ -591,17 +591,17 @@ defmodule EctoSyncTest do
           subscribe(person2, assocs: [:posts])
 
           receive do
-            {{Post, :inserted}, _} = sync_args ->
+            {EctoSync, {Post, :inserted, _} = sync_args} ->
               synced = EctoSync.sync(person2, sync_args)
 
               assert person2_expected_after_update == synced
           after
-            5000 -> raise "no updates in other process"
+            3000 -> raise "no inserts in other process"
           end
         end)
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person1, sync_args)
           assert person1_expected_after_update == synced
 
@@ -622,7 +622,7 @@ defmodule EctoSyncTest do
       {:ok, _post} = TestRepo.insert(%Post{person_id: person.id})
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
           assert do_preload(person, @preloads) == synced
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
@@ -649,7 +649,7 @@ defmodule EctoSyncTest do
       {:ok, _post} = TestRepo.insert(%Post{person_id: person.id, name: "test"})
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
           assert do_preload(person, @preloads) == synced
       after
@@ -668,7 +668,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
 
           assert do_preload(person, @preloads).test_posts |> Enum.sort() ==
@@ -683,7 +683,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
 
           assert do_preload(person, @preloads).test_posts |> Enum.sort() ==
@@ -704,7 +704,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        {{Post, :updated}, _} = sync_args ->
+        {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
 
           assert do_preload(person, @preloads).test_posts |> Enum.sort() ==
@@ -718,7 +718,7 @@ defmodule EctoSyncTest do
         |> TestRepo.delete()
 
       receive do
-        {{Post, :deleted}, _} = sync_args ->
+        {EctoSync, {Post, :deleted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
           assert do_preload(person, @preloads) == synced
       after
@@ -738,7 +738,7 @@ defmodule EctoSyncTest do
         TestRepo.insert(%Post{person_id: person.id, name: "test", tags: [%{name: "test tag"}]})
 
       receive do
-        {{Post, :inserted}, _} = sync_args ->
+        {EctoSync, {Post, :inserted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
 
           assert do_preload(person, @preloads) == synced
@@ -755,7 +755,7 @@ defmodule EctoSyncTest do
       TestRepo.delete(tag)
 
       receive do
-        {{Tag, :deleted}, _} = sync_args ->
+        {EctoSync, {Tag, :deleted, _} = sync_args} ->
           synced =
             EctoSync.sync(person, sync_args, preloads: %{Post => [:tags, :labels]})
 
@@ -779,7 +779,7 @@ defmodule EctoSyncTest do
 
       person =
         receive do
-          {{PostsTags, :inserted}, _} = sync_args ->
+          {EctoSync, {PostsTags, :inserted, _} = sync_args} ->
             synced = EctoSync.sync(person, sync_args)
             assert do_preload(person, @preloads) == synced
             synced
@@ -795,7 +795,7 @@ defmodule EctoSyncTest do
         |> do_preload([:posts])
 
       receive do
-        {{PostsTags, :inserted}, _} = sync_args ->
+        {EctoSync, {PostsTags, :inserted, _} = sync_args} ->
           synced =
             EctoSync.sync(person, sync_args)
 
@@ -816,7 +816,7 @@ defmodule EctoSyncTest do
 
       person =
         receive do
-          {{PostsTags, :inserted}, _} = sync_args ->
+          {EctoSync, {PostsTags, :inserted, _} = sync_args} ->
             synced = EctoSync.sync(person, sync_args)
             assert do_preload(person, @preloads) == synced
             synced
@@ -832,7 +832,7 @@ defmodule EctoSyncTest do
         |> do_preload([:posts])
 
       receive do
-        {{PostsTags, :inserted}, _} = sync_args ->
+        {EctoSync, {PostsTags, :inserted, _} = sync_args} ->
           synced =
             EctoSync.sync(person, sync_args)
 
@@ -854,7 +854,7 @@ defmodule EctoSyncTest do
       |> TestRepo.update()
 
       receive do
-        {{PostsTags, _}, _} = sync_args ->
+        {EctoSync, {PostsTags, _, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
 
           assert do_preload(person, @preloads) == synced
@@ -880,7 +880,7 @@ defmodule EctoSyncTest do
         |> do_preload([:posts])
 
       receive do
-        {{Tag, :updated}, _} = sync_args ->
+        {EctoSync, {Tag, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
@@ -905,15 +905,15 @@ defmodule EctoSyncTest do
 
       flush()
       |> Enum.each(fn
-        {{Tag, :updated}, {^tag_id, _}} = sync_args ->
+        {Tag, :updated, {^tag_id, _}} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
 
-        {{Tag, :updated}, _} = sync_args ->
+        {Tag, :updated, _} = sync_args ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
 
-        {{Tag, :inserted}, _} ->
+        {Tag, :inserted, _} ->
           false
 
         message ->
@@ -928,7 +928,7 @@ defmodule EctoSyncTest do
       TestRepo.delete(tag)
 
       receive do
-        {{Tag, :deleted}, _} = sync_args ->
+        {EctoSync, {Tag, :deleted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
@@ -951,7 +951,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        sync_args ->
+        {EctoSync, sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
@@ -969,7 +969,7 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       receive do
-        sync_args ->
+        {EctoSync, sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
@@ -984,7 +984,7 @@ defmodule EctoSyncTest do
       TestRepo.delete(label)
 
       receive do
-        {{label, :deleted}, _} = sync_args ->
+        {EctoSync, {label, :deleted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
@@ -1086,7 +1086,7 @@ defmodule EctoSyncTest do
 
   defp flush(messages \\ []) do
     receive do
-      message -> flush([message | messages])
+      {EctoSync, message} -> flush([message | messages])
     after
       500 ->
         messages

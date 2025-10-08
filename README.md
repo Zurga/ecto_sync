@@ -34,7 +34,7 @@ def mount(params, session, socket) do
   {:ok, assign(socket, posts: posts)}
 end
 
-def handle_info({{PostsTags, _event}, _} = sync_args, socket) do
+def handle_info({EctoSync, {PostsTags, _event} = sync_args}, socket) do
   {:ok, posts} = EctoSync.sync(socket.assigns.posts, sync_args)
   {:noreply, assign(socket, posts: posts)}
 end
@@ -70,7 +70,7 @@ def render(assigns) do
   """
 end
 
-def handle_info({{Tag, _event}, _} = sync_args, socket) do
+def handle_info({EctoSync, {Tag, _event, _} = sync_args}, socket) do
   {:ok, tags} = EctoSync.sync(socket.assigns.tags, sync_args)
   {:noreply, assign(socket, tags: tags)
 end

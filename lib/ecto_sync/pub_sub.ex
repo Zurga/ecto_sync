@@ -11,8 +11,11 @@ defmodule EctoSync.PubSub do
 
   @impl true
   def broadcast(adapter_name, topic, {{schema_event, identifiers}, ref}, _dispatcher) do
-    schema_event =
-      :persistent_term.get({EctoSync, schema_event}, schema_event)
+    message =
+      case :persistent_term.get({EctoSync, schema_event}, schema_event) do
+        {schema, event} -> {schema, event, {identifiers, ref}}
+        label -> {label, {identifiers, ref}}
+      end
 
     pubsub =
       Module.split(adapter_name)
@@ -22,7 +25,7 @@ defmodule EctoSync.PubSub do
     Registry.dispatch(pubsub, topic, fn entries ->
       if entries != [] do
         for {pid, _} <- entries do
-          send(pid, {schema_event, {identifiers, ref}})
+          send(pid, {EctoSync, message})
         end
       end
     end)

@@ -63,11 +63,7 @@ defmodule EctoSync.Subscriber do
     if self() not in pids do
       Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
 
-      Registry.register(
-        EventRegistry,
-        {encoded_identifier, id},
-        opts
-      )
+      Registry.register(EventRegistry, {encoded_identifier, id}, opts)
 
       Watcher.subscribe(encoded_identifier, id)
     end

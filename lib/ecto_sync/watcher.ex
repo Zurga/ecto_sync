@@ -3,7 +3,7 @@ defmodule EctoSync.Watcher do
   A library to allow you to easily get notifications about database changes directly from PostgreSQL.
   """
 
-  alias EctoSync.Watcher.Helpers
+  alias EctoSync.Helpers
   alias EctoSync.Watcher.WatcherServer
   alias EctoSync.Watcher.WatcherTriggerValidator
 
@@ -137,7 +137,7 @@ defmodule EctoSync.Watcher do
   defp validate_identifier({schema_mod, update_type})
        when is_atom(schema_mod) and is_atom(update_type) do
     cond do
-      !EctoSync.Watcher.Helpers.ecto_schema_mod?(schema_mod) ->
+      !Helpers.ecto_schema_mod?(schema_mod) ->
         raise ArgumentError,
               "Expected atom to be an Ecto schema module. Got: #{inspect(schema_mod)}"
 
@@ -208,6 +208,6 @@ defmodule EctoSync.Watcher do
   end
 
   defp debug_log(watcher_identifier, message) do
-    EctoSync.Watcher.Helpers.debug_log(watcher_identifier, message)
+    Helpers.debug_log(watcher_identifier, message)
   end
 end

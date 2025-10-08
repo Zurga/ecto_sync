@@ -50,7 +50,7 @@ defmodule EctoSync.Config do
     }
   end
 
-  def new({{schema, event}, {identifiers, ref}}, opts) do
+  def new({schema, event, {identifiers, ref}}, opts) do
     {config, _} = init(identifiers, ref, opts)
     %{config | schema: schema, event: event, get_fun: &config.repo.get(&1, &2)}
   end
