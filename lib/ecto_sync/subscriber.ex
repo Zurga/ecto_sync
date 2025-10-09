@@ -170,9 +170,7 @@ defmodule EctoSync.Subscriber do
     id = (is_list(id) && nil) || id
 
     try do
-      encoded_identifier =
-        watcher_identifier
-        |> get_encoded_label()
+      encoded_identifier = get_encoded_label(watcher_identifier)
 
       case Watcher.unsubscribe(encoded_identifier, id) do
         :ok -> Registry.unregister(EventRegistry, {encoded_identifier, id})

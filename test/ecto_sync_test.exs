@@ -223,7 +223,7 @@ defmodule EctoSyncTest do
 
       receive do
         {EctoSync, {Post, :inserted, _} = sync_args} ->
-          assert %Post{} == EctoSync.sync(:cached, sync_args, sync_opts)
+          assert Post == EctoSync.sync(:cached, sync_args, sync_opts).__struct__
 
           assert do_preload(person, posts: [person: :posts]) ==
                    EctoSync.sync(person, sync_args, sync_opts)
@@ -257,7 +257,7 @@ defmodule EctoSyncTest do
     test "subscribe/2 full flow", %{person: person} do
       person = do_preload(person, [:posts])
       subscribe(person, assocs: [:posts])
-      {:ok, %{id: post_id} = post} = TestRepo.insert(%Post{person_id: person.id})
+      {:ok, post} = TestRepo.insert(%Post{person_id: person.id})
 
       # assert [{{Post, :updated}, post_id} ] == subscribe({Post, :updated}, post_id)
 
@@ -266,7 +266,7 @@ defmodule EctoSyncTest do
           assert do_preload(person, [:posts]) == EctoSync.sync(person, sync_args)
       end
 
-      {:ok, updated} =
+      {:ok, _updated} =
         Ecto.Changeset.change(post, %{name: "updated"})
         |> TestRepo.update()
 
@@ -487,7 +487,7 @@ defmodule EctoSyncTest do
       end
     end
 
-    test "foreign key", %{person: person} do
+    test "foreign key" do
       preloads = [:other_person]
 
       {:ok, post} =
@@ -577,7 +577,7 @@ defmodule EctoSyncTest do
 
       subscribe(person1, assocs: [:posts])
 
-      {:ok, post1} =
+      {:ok, _post1} =
         Ecto.Changeset.change(post1, %{person_id: person2.id})
         |> TestRepo.update()
 
@@ -770,7 +770,7 @@ defmodule EctoSyncTest do
     end
 
     test "deleted", %{person_with_posts_and_tags: person} do
-      %{posts: [%{tags: [tag | _tags]} = post | _]} = person = do_preload(person, @preloads)
+      %{posts: [%{tags: [tag | _tags]} | _]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: @preloads)
 
@@ -982,7 +982,7 @@ defmodule EctoSyncTest do
     end
 
     test "updated", %{person_with_posts_and_tags: person} do
-      %{posts: [_post1, %{labels: [label | _]} = post2]} = person = do_preload(person, @preloads)
+      %{posts: [_post1, %{labels: [label | _]}]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: @preloads)
 
@@ -1000,13 +1000,13 @@ defmodule EctoSyncTest do
     end
 
     test "deleted", %{person_with_posts_and_tags: person} do
-      %{posts: [post1, %{labels: [label | _]}]} = person = do_preload(person, @preloads)
+      %{posts: [_, %{labels: [label | _]}]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: @preloads)
       TestRepo.delete(label)
 
       receive do
-        {EctoSync, {label, :deleted, _} = sync_args} ->
+        {EctoSync, {_, :deleted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert do_preload(person, @preloads) == synced
       after
