@@ -204,7 +204,8 @@ defmodule EctoSync do
   def sync(value, event, opts \\ [])
 
   def sync(value, event, opts)
-      when is_list(value) or is_struct(value) or is_nil(value) or is_map(value) do
+      when is_list(value) or is_struct(value) or is_nil(value) or is_map(value) or
+             value == :cached do
     config = Config.new(event, opts)
     Syncer.sync(value, config)
   end
@@ -235,7 +236,7 @@ defmodule EctoSync do
       iex> EctoSync.unsubscribe({Person, :inserted}, nil)
       :ok
   """
-  @spec unsubscribe(schema_or_list_of_schemas() | EctoWatch.watcher_identifier(), term()) ::
+  @spec unsubscribe(schema_or_list_of_schemas() | Watcher.watcher_identifier(), term()) ::
           list(term())
   defdelegate unsubscribe(value, id \\ []), to: Subscriber
 
