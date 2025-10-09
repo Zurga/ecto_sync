@@ -57,7 +57,7 @@ defmodule EctoSync.Subscriber do
     encoded_identifier = get_encoded_label(watcher_identifier)
 
     pids =
-      EctoSync.subscriptions(watcher_identifier, id)
+      subscriptions(watcher_identifier, id)
       |> Enum.map(&elem(&1, 0))
 
     if self() not in pids do
@@ -153,6 +153,14 @@ defmodule EctoSync.Subscriber do
       _ ->
         List.wrap(watcher_identifier)
     end
+  end
+
+  def subscribed?({_schema, _event} = watcher_identifier, id) do
+    pids =
+      subscriptions(watcher_identifier, id)
+      |> Enum.map(&elem(&1, 0))
+
+    self() in pids
   end
 
   def unsubscribe(value, opts \\ [])

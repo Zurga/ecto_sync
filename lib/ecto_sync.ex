@@ -212,6 +212,11 @@ defmodule EctoSync do
   def sync(value, _sync_config, _opts), do: value
 
   @doc """
+
+  """
+  defdelegate subscribed?(value, opts), to: Subscriber
+
+  @doc """
   Unsubscribe the current process from events. Possible inputs are:
     - `Ecto.Schema` struct
     - a list of `Ecto.Schema` structs

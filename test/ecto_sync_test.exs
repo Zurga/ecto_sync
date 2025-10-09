@@ -223,8 +223,7 @@ defmodule EctoSyncTest do
 
       receive do
         {EctoSync, {Post, :inserted, _} = sync_args} ->
-          # synced = EctoSync.sync(post, sync_args, sync_opts)
-          # assert synced == post
+          assert %Post{} == EctoSync.sync(:cached, sync_args, sync_opts)
 
           assert do_preload(person, posts: [person: :posts]) ==
                    EctoSync.sync(person, sync_args, sync_opts)
@@ -576,9 +575,9 @@ defmodule EctoSyncTest do
       %{posts: [post1 | _]} = person1 = do_preload(person1, preloads)
       person2 = do_preload(person2, preloads)
 
-      subscribe([person1, person2], assocs: [:posts])
+      subscribe(person1, assocs: [:posts])
 
-      {:ok, _} =
+      {:ok, post1} =
         Ecto.Changeset.change(post1, %{person_id: person2.id})
         |> TestRepo.update()
 
@@ -604,14 +603,37 @@ defmodule EctoSyncTest do
         {EctoSync, {Post, :updated, _} = sync_args} ->
           synced = EctoSync.sync(person1, sync_args)
           assert person1_expected_after_update == synced
-
-          synced = EctoSync.sync(person2, sync_args)
-          assert person2_expected_after_update == synced
       after
         500 -> raise "no updates for person1"
       end
 
+      refute_received({EctoSync, {Post, :inserted, _}})
       assert Task.await(other_process)
+
+      # other_process =
+      #   Task.async(fn ->
+      #     subscribe(person2_expected_after_update, assocs: [:posts])
+
+      #     person2_expected_after_update = TestRepo.get(Person, person2.id) |> do_preload(preloads)
+
+      #     receive do
+      #       {EctoSync, {Post, :updated, _} = sync_args} ->
+      #         synced = EctoSync.sync(person2, sync_args)
+
+      #         assert person2_expected_after_update == synced
+      #     after
+      #       3000 -> raise "no updates in other process"
+      #     end
+      #   end)
+
+      # {:ok, _} =
+      #   Ecto.Changeset.change(post1, %{name: "updated again"})
+      #   |> TestRepo.update()
+      #   |> IO.inspect()
+
+      # assert Task.await(other_process)
+
+      refute_received({EctoSync, {Post, :updated, _}})
     end
 
     test "preloads", %{person_with_posts_and_tags: person} do
@@ -1018,7 +1040,7 @@ defmodule EctoSyncTest do
   end
 
   describe "unsubscribe/1" do
-    test "unsubscribe", %{
+    test "unsubscribe from inserts", %{
       person: person
     } do
       subscribe(person, assocs: [:posts])
@@ -1031,6 +1053,27 @@ defmodule EctoSyncTest do
 
       {:ok, _post} =
         TestRepo.insert(%Post{person_id: person.id})
+
+      assert flush() == []
+    end
+
+    test "unsubscribe from updates", %{
+      person_with_posts: %{posts: [post | _]} = person
+    } do
+      subscribe(person, assocs: [:posts])
+
+      {:ok, _post} =
+        post
+        |> Ecto.Changeset.change(%{name: "updated"})
+        |> TestRepo.update()
+
+      assert length(flush()) == 1
+      unsubscribe(person, assocs: [:posts])
+
+      {:ok, _post} =
+        post
+        |> Ecto.Changeset.change(%{name: "updated again"})
+        |> TestRepo.update()
 
       assert flush() == []
     end

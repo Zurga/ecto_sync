@@ -230,6 +230,11 @@ defmodule EctoSync.Syncer do
           assoc_info.related == schema ->
         # Broadcast an insert to the new owner
         # TODO Unsubscribe from the assoc.
+
+        if not EctoSync.subscribed?({schema, :inserted}, {assoc_info.related_key, related_id}) do
+          do_unsubscribe(config)
+        end
+
         EctoSync.Watcher.WatcherServer.broadcast(
           schema,
           :inserted,
