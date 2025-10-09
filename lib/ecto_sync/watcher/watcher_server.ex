@@ -256,13 +256,13 @@ defmodule EctoSync.Watcher.WatcherServer do
 
     topics = topics(type, state.unique_label, values, state.options.schema_definition)
 
+    ref = :erlang.make_ref()
+
     for topic <- topics do
       debug_log(
         state.options,
         "Broadcasting to Phoenix PubSub topic `#{topic}`: #{inspect(message)}"
       )
-
-      ref = :erlang.make_ref()
 
       Phoenix.PubSub.broadcast(state.pub_sub_mod, topic, {message, ref})
     end
