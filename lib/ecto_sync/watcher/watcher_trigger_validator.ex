@@ -1,3 +1,4 @@
+# Original code copied and maybe modified from EctoWatch
 defmodule EctoSync.Watcher.WatcherTriggerValidator do
   @moduledoc """
   Internal task run as part of the EctoSync.Watcher supervision tree to check for a match between the triggers

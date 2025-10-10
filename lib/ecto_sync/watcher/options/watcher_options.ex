@@ -1,3 +1,4 @@
+# Original code copied and maybe modified from EctoWatch
 defmodule EctoSync.Watcher.Options.WatcherOptions do
   @moduledoc false
 

@@ -1,3 +1,4 @@
+# Original code copied and maybe modified from EctoWatch
 defmodule EctoSync.Watcher.DB do
   @moduledoc "Mockable simple queries to PostgreSQL"
 

@@ -1,3 +1,4 @@
+# Original code copied and maybe modified from EctoWatch
 defmodule EctoSync.Watcher.WatcherSupervisor do
   @moduledoc """
   Internal Supervisor for postgres notification watchers (`EctoSync.Watcher.WatcherServer`)

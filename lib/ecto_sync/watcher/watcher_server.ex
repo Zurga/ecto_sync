@@ -1,3 +1,4 @@
+# Original code copied and maybe modified from EctoWatch
 defmodule EctoSync.Watcher.WatcherServer do
   @moduledoc """
   Internal GenServer for the individual change watchers which are configured by end users

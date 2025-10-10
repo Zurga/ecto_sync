@@ -1,3 +1,4 @@
+# Original code copied and maybe modified from EctoWatch
 defmodule EctoSync.Watcher do
   @moduledoc """
   A library to allow you to easily get notifications about database changes directly from PostgreSQL.
