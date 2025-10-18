@@ -83,6 +83,15 @@ defmodule EctoSync.Syncer do
     Enum.map(values, &do_sync(&1, new, config)) ++ [new]
   end
 
+  defp do_sync(
+         [%{__struct__: schema} | _] = values,
+         id,
+         %{event: :deleted, schema: schema} = config
+       ) do
+    Enum.reject(values, &same_record?(&1, {schema, id}))
+    |> Enum.map(&do_sync(&1, id, config))
+  end
+
   defp do_sync(values, new, config) when is_list(values),
     do: Enum.map(values, &do_sync(&1, new, config))
 

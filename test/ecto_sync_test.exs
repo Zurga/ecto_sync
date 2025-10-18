@@ -294,14 +294,19 @@ defmodule EctoSyncTest do
         |> TestRepo.update()
 
       person = TestRepo.preload(person, [:posts], force: true)
+      posts = person.posts
 
       {:ok, _updated} = TestRepo.delete(post)
       expected = TestRepo.preload(person, [:posts], force: true)
+      expected_posts = expected.posts
 
       receive do
         {EctoSync, {Post, :deleted, _} = sync_args} ->
           synced = EctoSync.sync(person, sync_args)
           assert synced == expected
+
+          synced = EctoSync.sync(posts, sync_args)
+          assert expected_posts == synced
       after
         500 ->
           raise "no deletes"
