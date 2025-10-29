@@ -84,7 +84,7 @@ by adding `ecto_sync` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ecto_sync, "~> 0.1.0"}
+    {:ecto_sync, "~> 0.2.2"}
   ]
 end
 ```
