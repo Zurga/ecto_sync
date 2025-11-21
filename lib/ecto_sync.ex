@@ -57,7 +57,7 @@ defmodule EctoSync do
           elem(tuple, 0)
       end)
       |> Enum.uniq()
-      |> EctoSync.Schemas.new()
+      |> EctoGraph.new()
 
     :persistent_term.put(__MODULE__, %{state | schemas: schemas})
 

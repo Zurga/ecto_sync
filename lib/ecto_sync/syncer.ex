@@ -106,18 +106,19 @@ defmodule EctoSync.Syncer do
 
       get_preloaded(value_schema, config.id, preloads, config)
     else
-      value_schema
-      |> path_to(new_schema, config)
-      |> Enum.reduce(value, &deep_update(&2, &1, new, config))
+      config.schemas
+      |> EctoGraph.paths(value_schema, new_schema)
+      |> EctoGraph.prewalk(value, &deep_update(&1, &2, &3, new, config))
     end
   end
 
   defp do_sync(%{__struct__: value_schema} = value, new, %{schema: schema} = config) do
     case Map.get(config.schemas.join_modules, schema) do
       nil ->
-        value_schema
-        |> path_to(schema, config)
-        |> Enum.reduce(value, &deep_update(&2, &1, new, config))
+        config.schemas
+        |> EctoGraph.paths(value_schema, schema)
+        |> IO.inspect()
+        |> EctoGraph.prewalk(value, &deep_update(&1, &2, &3, new, config))
 
       associated_schemas ->
         associated_schemas
@@ -133,60 +134,44 @@ defmodule EctoSync.Syncer do
     value
   end
 
-  defp deep_update(%Ecto.Association.NotLoaded{} = not_loaded, _, _, _) do
-    not_loaded
+  defp deep_update(
+         _parent,
+         assoc,
+         %ManyToMany{
+           related: related_schema,
+           join_through: schema,
+           join_keys: [_, {child_key, _}]
+         },
+         _,
+         %{schema: schema, event: :deleted} = config
+       ) do
+    id = Map.get(config.assocs, child_key)
+
+    case find_by_primary_key(assoc, {related_schema, id}) do
+      nil -> assoc
+      index -> List.delete_at(assoc, index)
+    end
   end
 
-  defp deep_update(value, path, new, config) when is_list(value) do
-    Enum.map(value, &deep_update(&1, path, new, config))
+  defp deep_update(_parent, assoc, _assoc_info, id, %{schema: schema, event: :deleted})
+       when is_list(assoc) do
+    case find_by_primary_key(assoc, {schema, id}) do
+      nil -> assoc
+      index -> List.delete_at(assoc, index)
+    end
   end
 
-  defp deep_update(value, {key, []}, id, %{schema: schema, event: :deleted} = config) do
-    assoc_info = get_schema(value).__schema__(:association, key)
-
-    {schema, id} =
-      case assoc_info do
-        %ManyToMany{related: related_schema, join_through: ^schema, join_keys: join_keys} ->
-          [_, {child_key, _}] = join_keys
-          {related_schema, Map.get(config.assocs, child_key)}
-
-        _ ->
-          {schema, id}
-      end
-
-    Map.update!(value, key, fn
-      assocs when is_list(assocs) ->
-        case find_by_primary_key(assocs, {schema, id}) do
-          nil -> assocs
-          index -> List.delete_at(assocs, index)
-        end
-
-      assoc ->
-        if same_record?(assoc, {schema, id}) do
-          nil
-        else
-          assoc
-        end
-    end)
+  defp deep_update(_parent, assoc, _assoc_info, id, %{schema: schema, event: :deleted}) do
+    if same_record?(assoc, {schema, id}) do
+      nil
+    else
+      assoc
+    end
   end
 
-  defp deep_update(value, {_key, []} = path, new, config) when is_list(new) do
-    Enum.reduce(new, value, &deep_update(&2, path, &1, config))
+  defp deep_update(parent, assoc, assoc_info, new, config) do
+    assoc_update(parent, assoc, new, assoc_info, config)
   end
-
-  defp deep_update(value, {key, []}, new, config) do
-    value_schema = get_schema(value)
-
-    assoc_info = value_schema.__schema__(:association, key)
-
-    Map.update!(value, key, &assoc_update(value, &1, new, assoc_info, config))
-  end
-
-  defp deep_update(value, {key, nested}, new, config),
-    do: Map.update!(value, key, &deep_update(&1, nested, new, config))
-
-  defp deep_update(value, keys, new, config),
-    do: Enum.reduce(keys, value, &deep_update(&2, &1, new, config))
 
   defp maybe_update(values, new, config) when is_list(values),
     do: Enum.map(values, &maybe_update(&1, new, config)) |> Enum.reject(&is_nil/1)
@@ -282,8 +267,6 @@ defmodule EctoSync.Syncer do
             Enum.reduce(struct, acc, &do_sync(&2, &1, config))
 
           is_struct(struct) ->
-            path_to(get_schema(acc), get_schema(struct), config)
-
             do_sync(acc, struct, config)
 
           true ->
@@ -426,10 +409,6 @@ defmodule EctoSync.Syncer do
     value = struct(schema, id: id)
     EctoSync.unsubscribe(value, [])
     value
-  end
-
-  defp path_to(from, to, config) do
-    Map.get(config.schemas.paths, {from, to}, [])
   end
 
   defp match_where?(_struct, []) do
