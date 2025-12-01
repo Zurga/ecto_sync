@@ -15,6 +15,7 @@ defmodule EctoSync.Subscriber do
     values
     |> Enum.flat_map(&subscribe(&1, opts))
     |> add_opts(opts)
+    |> merge_assocs()
     |> Enum.uniq()
     |> Enum.map(fn {{watcher_identifier, id}, opts} ->
       do_subscribe(watcher_identifier, id, opts)
@@ -29,13 +30,12 @@ defmodule EctoSync.Subscriber do
   def subscribe([value | _] = list, opts) when is_struct(value),
     do: Enum.flat_map(list, &subscribe(&1, opts))
 
-  def subscribe(value, opts) when is_struct(value) do
+  def subscribe(%schema{} = value, opts) when is_struct(value) do
     subscribe_events(value)
     |> add_opts(opts)
     |> Enum.concat(subscribe_events_assocs(value, opts[:assocs] || []))
     |> then(fn events ->
       if opts[:inserted] do
-        schema = get_schema(value)
         [{{{schema, :inserted}, nil}, opts} | events]
       else
         events
@@ -46,7 +46,6 @@ defmodule EctoSync.Subscriber do
       do_subscribe(watcher_identifier, id, opts)
     end)
     |> Enum.uniq()
-    |> Enum.sort()
   end
 
   def subscribe(watcher_identifier, id) do
@@ -61,7 +60,7 @@ defmodule EctoSync.Subscriber do
       |> Enum.map(&elem(&1, 0))
 
     if self() not in pids do
-      Logger.debug("EventRegistry | #{inspect({watcher_identifier, id})}")
+      Logger.debug("EventRegistry | #{inspect({watcher_identifier, id, opts})}")
 
       Registry.register(EventRegistry, {encoded_identifier, id}, opts)
 
@@ -110,15 +109,7 @@ defmodule EctoSync.Subscriber do
       }) do
     id = primary_key(struct)
 
-    event_label = fn
-      event when is_binary(join_through) ->
-        String.to_atom("#{join_through}_#{event}")
-
-      event ->
-        {join_through, event}
-    end
-
-    Enum.map(@events, &{event_label.(&1), {parent_key, id}})
+    Enum.map(@events, &{{join_through, &1}, {parent_key, id}})
   end
 
   def subscribe_events(label_or_schema, _) when is_atom(label_or_schema) do
@@ -133,8 +124,7 @@ defmodule EctoSync.Subscriber do
     Enum.map(values, &subscribe_events(&1)) |> List.flatten()
   end
 
-  def subscribe_events(value, _) when is_struct(value) do
-    schema = get_schema(value)
+  def subscribe_events(%schema{} = value, _) when is_struct(value) do
     id = primary_key(value)
 
     if ecto_schema_mod?(schema) do
@@ -164,6 +154,11 @@ defmodule EctoSync.Subscriber do
   end
 
   def unsubscribe(value, opts \\ [])
+
+  def unsubscribe(watcher_identifier, id) when is_binary(watcher_identifier) do
+    [:updated, :deleted]
+    |> Enum.map(&unsubscribe({watcher_identifier, &1}, id))
+  end
 
   def unsubscribe(watcher_identifier, id)
       when is_tuple(watcher_identifier) or is_atom(watcher_identifier) do
@@ -229,7 +224,7 @@ defmodule EctoSync.Subscriber do
     end)
   end
 
-  defp subscribe_events_assocs(parent, assoc_keys, acc) when is_struct(parent) do
+  defp subscribe_events_assocs(%schema{} = parent, assoc_keys, acc) when is_struct(parent) do
     {key, nested} =
       case assoc_keys do
         {key, []} -> {key, nil}
@@ -239,7 +234,6 @@ defmodule EctoSync.Subscriber do
 
     opts = [assocs: nested || []]
 
-    schema = get_schema(parent)
     assoc_info = schema.__schema__(:association, key)
 
     parent

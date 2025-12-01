@@ -257,7 +257,13 @@ defmodule EctoSync.Watcher.WatcherServer do
 
     topics = topics(type, state.unique_label, values, state.options.schema_definition)
 
-    ref = :erlang.make_ref()
+    new_count =
+      case Helpers.get_watcher_identifier(elem(message, 0)) do
+        {_mod, :inserted} = watcher -> watcher
+        {mod, _} -> {mod, values.id}
+        label -> {label, values.id}
+      end
+      |> EctoSync.increment_row_ref()
 
     for topic <- topics do
       debug_log(
@@ -265,7 +271,7 @@ defmodule EctoSync.Watcher.WatcherServer do
         "Broadcasting to Phoenix PubSub topic `#{topic}`: #{inspect(message)}"
       )
 
-      Phoenix.PubSub.broadcast(state.pub_sub_mod, topic, {message, ref})
+      Phoenix.PubSub.broadcast(state.pub_sub_mod, topic, {message, new_count})
     end
   end
 

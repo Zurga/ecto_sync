@@ -136,8 +136,11 @@ defmodule EctoSync.Watcher do
   end
 
   defp validate_identifier({schema_mod, update_type})
-       when is_atom(schema_mod) and is_atom(update_type) do
+       when (is_atom(schema_mod) or is_binary(schema_mod)) and is_atom(update_type) do
     cond do
+      is_binary(schema_mod) ->
+        :ok
+
       !Helpers.ecto_schema_mod?(schema_mod) ->
         raise ArgumentError,
               "Expected atom to be an Ecto schema module. Got: #{inspect(schema_mod)}"

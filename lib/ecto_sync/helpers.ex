@@ -1,7 +1,12 @@
 defmodule EctoSync.Helpers do
-  require Logger
   @moduledoc false
+
+  require Logger
   alias EctoSync.Config
+
+  def debug_log(watcher_identifier, message) do
+    Logger.debug("EctoSync | #{inspect(watcher_identifier)} | #{inspect(self())} | #{message}")
+  end
 
   def ecto_schema_mod?(schema_mod) do
     schema_mod.__schema__(:fields)
@@ -14,9 +19,15 @@ defmodule EctoSync.Helpers do
 
   def encode_watcher_identifier({schema, event}) do
     try do
-      schema.__info__(:module)
+      identifier =
+        if is_binary(schema) do
+          schema
+        else
+          schema.__info__(:module)
+          |> to_string()
+        end
 
-      :crypto.hash(:sha256, to_string(schema))
+      :crypto.hash(:sha256, identifier)
       |> Base.encode32(case: :lower, padding: false)
       |> binary_part(0, 8)
     rescue
@@ -25,16 +36,6 @@ defmodule EctoSync.Helpers do
     end
     |> then(&:"#{&1}_#{event}")
   end
-
-  def get_encoded_label(watcher_identifier),
-    do: :persistent_term.get({EctoSync, watcher_identifier}, watcher_identifier)
-
-  def get_watcher_identifier(label),
-    do: :persistent_term.get({EctoSync, label}, label)
-
-  def get_schema([value | _]), do: get_schema(value)
-  def get_schema(value) when is_struct(value), do: value.__struct__
-  def get_schema(_), do: nil
 
   def find_preloads([value | _]) when is_struct(value), do: find_preloads(value)
 
@@ -58,6 +59,12 @@ defmodule EctoSync.Helpers do
 
   def find_preloads(preloads), do: preloads
 
+  def get_encoded_label(watcher_identifier),
+    do: :persistent_term.get({EctoSync, watcher_identifier}, watcher_identifier)
+
+  def get_watcher_identifier(label),
+    do: :persistent_term.get({EctoSync, label}, label)
+
   def get_from_cache(%Config{
         repo: repo,
         ref: ref,
@@ -65,7 +72,8 @@ defmodule EctoSync.Helpers do
         id: id,
         schema: schema,
         get_fun: get_fun,
-        preloads: preloads
+        preloads: preloads,
+        event: event
       }) do
     preloads =
       Map.get(preloads || %{}, schema, [])
@@ -73,11 +81,14 @@ defmodule EctoSync.Helpers do
       |> nested_sort()
 
     key =
-      List.to_tuple([schema, id] ++ [ref] ++ [preloads])
+      List.to_tuple([schema, id] ++ [ref, event, preloads])
 
     fetched =
       Cachex.fetch(cache_name, key, fn _key ->
-        {:commit, get_fun.(schema, id) |> repo.preload(preloads, force: true)}
+        {
+          :commit,
+          get_fun.(schema, id) |> repo.preload(preloads, force: true)
+        }
       end)
 
     case fetched do
@@ -85,6 +96,7 @@ defmodule EctoSync.Helpers do
         value
 
       {:error, error} ->
+        IO.inspect(error, label: :cachex_error)
         error
     end
   end
@@ -120,6 +132,42 @@ defmodule EctoSync.Helpers do
   def kw_deep_merge([], list), do: list
   def kw_deep_merge(list, []), do: list
   def kw_deep_merge(list, list), do: list
+
+  def label(schema_mod_or_label) do
+    if ecto_schema_mod?(schema_mod_or_label) do
+      module_to_label(schema_mod_or_label)
+    else
+      schema_mod_or_label
+    end
+  end
+
+  def module_to_label(module) do
+    module
+    |> Module.split()
+    |> Enum.join("_")
+    |> String.downcase()
+  end
+
+  def normalize_to_preloads([]), do: []
+
+  def normalize_to_preloads(k) when is_atom(k), do: [k]
+
+  def normalize_to_preloads(map) when is_map(map) do
+    Enum.reduce(map, %{}, fn
+      {k, v}, acc ->
+        Map.put(acc, k, normalize_to_preloads(v))
+    end)
+  end
+
+  def normalize_to_preloads([k | rest]) when is_atom(k),
+    do: [{k, []} | normalize_to_preloads(rest)]
+
+  def normalize_to_preloads([{k, v} | rest]) when is_list(v),
+    do: [{k, v} | normalize_to_preloads(rest)]
+
+  def nested_sort([]), do: []
+  def nested_sort([{k, v} | rest]), do: [{k, nested_sort(v)} | nested_sort(rest)]
+  def nested_sort(list), do: Enum.sort(list)
 
   def primary_key(%{__struct__: schema_mod} = value) when is_struct(value) do
     primary_key(schema_mod)
@@ -187,70 +235,6 @@ defmodule EctoSync.Helpers do
     end)
   end
 
-  def normalize_to_preloads([]), do: []
-
-  def normalize_to_preloads(k) when is_atom(k), do: [k]
-
-  def normalize_to_preloads(map) when is_map(map) do
-    Enum.reduce(map, %{}, fn
-      {k, v}, acc ->
-        Map.put(acc, k, normalize_to_preloads(v))
-    end)
-  end
-
-  def normalize_to_preloads([k | rest]) when is_atom(k),
-    do: [{k, []} | normalize_to_preloads(rest)]
-
-  def normalize_to_preloads([{k, v} | rest]) when is_list(v),
-    do: [{k, v} | normalize_to_preloads(rest)]
-
-  def nested_sort([]), do: []
-  def nested_sort([{k, v} | rest]), do: [{k, nested_sort(v)} | nested_sort(rest)]
-  def nested_sort(list), do: Enum.sort(list)
-  # def update_cache(%Config{schema: schema, event: :deleted, id: id, cache_name: cache_name}) do
-  #   Cachex.del(cache_name, {schema, id})
-  #   {:ok, {schema, id}}
-  # end
-
-  # def update_cache(%Config{
-  #       schema: schema,
-  #       event: _event,
-  #       id: id,
-  #       cache_name: cache_name,
-  #       get_fun: get_fun
-  #     }) do
-  #   key = {schema, id}
-
-  #   record =
-  #     get_fun.(schema, id)
-
-  #   {:ok, true} = Cachex.put(cache_name, key, record)
-  #   {:ok, key}
-  # end
-
-  defp maybe_call_with_struct(function, key, struct, acc) do
-    if is_function(function, 3) do
-      function.(key, struct, acc)
-    else
-      function.(key, acc)
-    end
-  end
-
-  def label(schema_mod_or_label) do
-    if ecto_schema_mod?(schema_mod_or_label) do
-      module_to_label(schema_mod_or_label)
-    else
-      schema_mod_or_label
-    end
-  end
-
-  def module_to_label(module) do
-    module
-    |> Module.split()
-    |> Enum.join("_")
-    |> String.downcase()
-  end
-
   def validate_list(list, func) when is_list(list) do
     result =
       list
@@ -267,7 +251,11 @@ defmodule EctoSync.Helpers do
     {:error, "should be a list"}
   end
 
-  def debug_log(watcher_identifier, message) do
-    Logger.debug("EctoSync | #{inspect(watcher_identifier)} | #{inspect(self())} | #{message}")
+  defp maybe_call_with_struct(function, key, struct, acc) do
+    if is_function(function, 3) do
+      function.(key, struct, acc)
+    else
+      function.(key, acc)
+    end
   end
 end

@@ -13,8 +13,9 @@ defmodule EctoSync.PubSub do
   def broadcast(adapter_name, topic, {{schema_event, identifiers}, ref}, _dispatcher) do
     message =
       case :persistent_term.get({EctoSync, schema_event}, schema_event) do
-        {schema, event} -> {schema, event, {identifiers, ref}}
-        label -> {label, {identifiers, ref}}
+        {schema, event} ->
+          {schema, event, {identifiers, ref}}
+          # label -> {label, event, {identifiers, ref}}
       end
 
     pubsub =
@@ -23,10 +24,8 @@ defmodule EctoSync.PubSub do
       |> String.to_existing_atom()
 
     Registry.dispatch(pubsub, topic, fn entries ->
-      if entries != [] do
-        for {pid, _} <- entries do
-          send(pid, {EctoSync, message})
-        end
+      for {pid, _} <- entries do
+        send(pid, {EctoSync, message})
       end
     end)
 
