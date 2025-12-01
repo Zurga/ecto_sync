@@ -1,7 +1,7 @@
 defmodule EctoSync.Syncer do
   @moduledoc false
   alias EctoSync.{Config, Subscriber}
-  alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
+  alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany, NotLoaded}
   import EctoSync.Helpers
   import Ecto.Query
 
@@ -59,7 +59,13 @@ defmodule EctoSync.Syncer do
       Subscriber.subscribe(new, assocs: preloads)
 
       do_sync(value_or_values, new, config)
-      |> maybe_update_has_through(new, config)
+      |> then(fn
+        values when is_list(values) ->
+          Enum.map(values, &maybe_update_has_through(&1, new, config))
+
+        value ->
+          maybe_update_has_through(value, new, config)
+      end)
     end
   end
 
@@ -237,42 +243,59 @@ defmodule EctoSync.Syncer do
     end
   end
 
-  defp maybe_update_has_through(value_or_values, new, config) do
+  defp maybe_update_has_through(%value_schema{} = value, %new_schema{} = new, config) do
     # For each preloaded assoc, check if there is another schema that has it as a HasThrough.
     # If so, update that association based on its path for the assoc.
-    value_or_values
+    reduce_preloaded_assocs(value, fn
+      {key, %HasThrough{through: through} = assoc_info}, acc ->
+        related_schema = resolve_through(value_schema, through)
+
+        config.schemas
+        |> EctoGraph.paths(new_schema, related_schema)
+        |> Enum.map(&EctoGraph.get(new, &1))
+        |> Enum.reduce(acc, fn values, acc ->
+          Enum.reduce(values, acc, fn
+            %NotLoaded{}, acc ->
+              acc
+
+            value, acc ->
+              Map.update!(acc, key, &do_insert(&1, value, assoc_info, config))
+          end)
+        end)
+
+      _, acc ->
+        acc
+    end)
   end
 
-  defp has_through_update(value, assoc, config) when is_list(assoc) do
-    Enum.map(assoc, &has_through_update(value, &1, config))
-  end
-
-  defp has_through_update(%schema{} = value, %assoc_schema{} = assoc, config) do
-    config.schemas
-    |> EctoGraph.paths(schema, assoc_schema)
-    |> IO.inspect(label: "#{schema}, #{assoc_schema}")
-    |> EctoGraph.prewalk(value, fn _, assoc, info -> assoc_update(value, assoc, info, assoc, config) end)
-  end
-
-  defp do_insert(assocs, resolved, %{where: where}, %{schema: schema} = config)
-       when is_list(assocs) do
+  defp do_insert(assocs, {_new, {schema, id}}, assoc_info, config) when is_list(assocs) do
     preloads =
       case assocs do
         [] -> config.preloads[schema] || []
         _ -> find_preloads(config.preloads[schema] || assocs || [])
       end
 
-    # In case a many to many assocs has to be inserted.
-    {new, inserted} =
-      case resolved do
-        {new, {related_schema, id}} ->
-          {new, get_preloaded(related_schema, id, preloads, config)}
+    inserted = get_preloaded(schema, id, preloads, config)
+    in_where = match_where?(inserted, assoc_info)
 
-        new ->
-          {new, get_preloaded(schema, new.id, preloads, config)}
+    if in_where do
+      EctoSync.subscribe(inserted)
+      assocs ++ [inserted]
+    else
+      assocs
+    end
+  end
+
+  defp do_insert(assocs, %schema{} = new, assoc_info, config) when is_list(assocs) do
+    preloads =
+      case assocs do
+        [] -> config.preloads[schema] || []
+        _ -> find_preloads(config.preloads[schema] || assocs || [])
       end
 
-    in_where = match_where?(inserted, where)
+    inserted = get_preloaded(schema, new.id, preloads, config)
+
+    in_where = match_where?(inserted, assoc_info)
 
     if in_where do
       EctoSync.subscribe(inserted)
@@ -283,12 +306,12 @@ defmodule EctoSync.Syncer do
     end
   end
 
-  defp do_insert(assoc, new, %{where: where}, %{schema: schema} = config) do
+  defp do_insert(assoc, %schema{} = new, assoc_info, config) do
     preloads = find_preloads(config.preloads[schema] || assoc)
 
     new = get_preloaded(schema, new.id, preloads, config)
 
-    (match_where?(new, where) && new) || assoc
+    (match_where?(new, assoc_info) && new) || assoc
   end
 
   defp get_preloaded(schema, id, preloads, config) do
@@ -341,7 +364,7 @@ defmodule EctoSync.Syncer do
 
   defp same_record?(v1, v2, primary_key \\ nil)
 
-  defp same_record?(%Ecto.Association.NotLoaded{}, _, _), do: false
+  defp same_record?(%NotLoaded{}, _, _), do: false
 
   defp same_record?(%schema_mod{} = v1, %schema_mod{} = v2, primary_key) do
     primary_key =
@@ -369,11 +392,12 @@ defmodule EctoSync.Syncer do
 
   defp do_unsubscribe(%{schema: schema, id: id}) do
     if ecto_schema_mod?(schema) do
-      value = struct(schema, id: id)
+      struct(schema, id: id)
     else
       schema
     end
     |> EctoSync.unsubscribe([])
+
     {schema, id}
   end
 
@@ -381,7 +405,7 @@ defmodule EctoSync.Syncer do
     true
   end
 
-  defp match_where?(struct, [{field, condition} | conditions]) do
+  defp match_where?(struct, %{where: [{field, condition} | conditions]}) do
     value = Map.get(struct, field)
 
     truthy? =
@@ -394,4 +418,6 @@ defmodule EctoSync.Syncer do
 
     (truthy? && match_where?(struct, conditions)) || false
   end
+
+  defp match_where?(_struct, %{}), do: true
 end
