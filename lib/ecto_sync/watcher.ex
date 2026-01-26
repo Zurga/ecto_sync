@@ -72,7 +72,7 @@ defmodule EctoSync.Watcher do
            WatcherServer.pub_sub_subscription_details(watcher_identifier, id) do
       if(debug?, do: debug_log(watcher_identifier, "Subscribing to watcher"))
 
-      Phoenix.PubSub.subscribe(pub_sub_mod, channel_name)
+      # Phoenix.PubSub.subscribe(pub_sub_mod, channel_name)
     else
       {:error, error} ->
         raise ArgumentError, error

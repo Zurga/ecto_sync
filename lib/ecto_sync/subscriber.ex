@@ -60,20 +60,27 @@ defmodule EctoSync.Subscriber do
       |> Enum.map(&elem(&1, 0))
 
     if self() not in pids do
-      Logger.debug("EventRegistry | #{inspect({watcher_identifier, id, opts})}")
+      # Logger.debug("EventRegistry | #{inspect({watcher_identifier, id, opts})}")
+      Logger.debug("EventRegistryRegister | #{inspect({encoded_identifier, id, opts})}")
 
       Registry.register(EventRegistry, {encoded_identifier, id}, opts)
 
-      Watcher.subscribe(encoded_identifier, id)
+      # Watcher.subscribe(encoded_identifier, id)
     end
 
     {watcher_identifier, id}
   end
 
   def subscriptions(watcher_identifier, id) do
+    identifiers =
+      case watcher_identifier do
+        {schema, _} -> {primary_key(schema), id}
+        label -> label
+      end
+
     encoded = get_encoded_label(watcher_identifier)
 
-    Registry.lookup(EventRegistry, {encoded, id})
+    Registry.lookup(EventRegistry, {encoded, identifiers})
   end
 
   def subscribe_events(label_or_schema, assoc \\ nil)
@@ -129,7 +136,7 @@ defmodule EctoSync.Subscriber do
 
     if ecto_schema_mod?(schema) do
       ~w/updated deleted/a
-      |> Enum.map(&{{schema, &1}, id})
+      |> Enum.map(&{{schema, &1}, {primary_key(schema), id}})
     else
     end
   end
@@ -138,7 +145,7 @@ defmodule EctoSync.Subscriber do
       when is_atom(schema) and event in [:all | @events] do
     case watcher_identifier do
       {schema, :all} ->
-        Enum.map(@events, &{{schema, &1}, id})
+        Enum.map(@events, &{{schema, &1}, {primary_key(schema), id}})
 
       _ ->
         List.wrap(watcher_identifier)

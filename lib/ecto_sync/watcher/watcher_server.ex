@@ -246,7 +246,7 @@ defmodule EctoSync.Watcher.WatcherServer do
   end
 
   def do_broadcast(type, values, state) do
-    message =
+    {schema_event, identifiers} =
       case state.options.label do
         nil ->
           {{state.options.label || state.options.schema_definition.label, type}, values}
@@ -255,10 +255,10 @@ defmodule EctoSync.Watcher.WatcherServer do
           {label, values}
       end
 
-    topics = topics(type, state.unique_label, values, state.options.schema_definition)
+    topics = topics(type, schema_event, values, state.options.schema_definition)
 
-    new_count =
-      case Helpers.get_watcher_identifier(elem(message, 0)) do
+    ref =
+      case Helpers.get_watcher_identifier(schema_event) do
         {_mod, :inserted} = watcher -> watcher
         {mod, _} -> {mod, values.id}
         label -> {label, values.id}
@@ -266,12 +266,29 @@ defmodule EctoSync.Watcher.WatcherServer do
       |> EctoSync.increment_row_ref()
 
     for topic <- topics do
-      debug_log(
-        state.options,
-        "Broadcasting to Phoenix PubSub topic `#{topic}`: #{inspect(message)}"
-      )
+      {schema, event, {identifiers, ref}} =
+        message =
+        case :persistent_term.get({EctoSync, schema_event}, schema_event) do
+          {schema, event} ->
+            {schema, event, {values, ref}}
 
-      Phoenix.PubSub.broadcast(state.pub_sub_mod, topic, {message, new_count})
+            # label -> {label, event, {identifiers, ref}}
+        end
+
+      # debug_log(
+      #   state.options,
+      #   "Broadcasting to Phoenix PubSub topic `#{topic}`: #{inspect(message)}"
+      # )
+
+      Registry.dispatch(
+        EventRegistry,
+        topic,
+        fn entries ->
+          for {pid, _} <- entries do
+            send(pid, {:ecto_sync, message})
+          end
+        end
+      )
     end
   end
 
@@ -337,7 +354,15 @@ defmodule EctoSync.Watcher.WatcherServer do
       unique_label
       | returned_values
         |> Enum.filter(fn {k, _} -> k in identifier_columns end)
-        |> Enum.map(fn {k, v} -> "#{unique_label}|#{k}|#{v}" end)
+        # |> Enum.map(fn {k, v} -> "#{unique_label}|#{k}|#{v}" end)
+        |> Enum.map(fn {k, v} -> {unique_label, {k, v}} end)
+        |> then(fn topics ->
+          if update_type == :inserted do
+            topics ++ [{unique_label, nil}]
+          else
+            topics
+          end
+        end)
     ]
   end
 

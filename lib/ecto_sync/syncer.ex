@@ -9,6 +9,12 @@ defmodule EctoSync.Syncer do
 
   def sync(:cached, %{event: :deleted} = config) do
     do_unsubscribe(config)
+
+    if is_binary(config.schema) do
+      {config.schema, config.id}
+    else
+      struct(config.schema, %{id: config.id})
+    end
   end
 
   def sync(:cached, %{event: :inserted} = config) do
