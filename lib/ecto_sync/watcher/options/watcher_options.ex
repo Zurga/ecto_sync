@@ -78,6 +78,8 @@ defmodule EctoSync.Watcher.Options.WatcherOptions do
     end
   end
 
+  def validate(%__MODULE__{} = watcher_options), do: {:ok, watcher_options}
+
   def validate({schema_definition, update_type}) do
     validate({schema_definition, update_type, []})
   end

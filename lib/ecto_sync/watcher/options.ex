@@ -11,10 +11,10 @@ defmodule EctoSync.Watcher.Options do
       repo_mod: opts[:repo],
       pub_sub_mod: opts[:pub_sub],
       debug?: opts[:debug?],
-      watchers:
-        Enum.map(opts[:watchers], fn watcher_opts ->
-          WatcherOptions.new(watcher_opts, opts[:debug?])
-        end)
+      watchers: opts[:watchers]
+      # Enum.map(opts[:watchers], fn watcher_opts ->
+      #   WatcherOptions.new(watcher_opts, opts[:debug?])
+      # end)
     }
   end
 

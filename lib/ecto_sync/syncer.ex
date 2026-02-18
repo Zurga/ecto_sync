@@ -34,7 +34,8 @@ defmodule EctoSync.Syncer do
   def sync(value_or_values, %{schema: schema, event: :inserted} = config) do
     preloads =
       for id <- config.assocs,
-          {_, [assocs: assoc]} <- Subscriber.subscriptions({schema, :inserted}, id) do
+          {_, opts} <- Subscriber.subscriptions({schema, :inserted}, id),
+          assoc <- opts[:assocs] do
         assoc
       end
       |> Enum.concat(config.preloads[schema] || [])
@@ -200,15 +201,7 @@ defmodule EctoSync.Syncer do
         # Broadcast an insert to the new owner
         # TODO Unsubscribe from the assoc.
 
-        if not EctoSync.subscribed?({schema, :inserted}, {assoc_info.related_key, related_id}) do
-          do_unsubscribe(config)
-        end
-
-        EctoSync.Watcher.WatcherServer.broadcast(
-          schema,
-          :inserted,
-          %{:id => new.id, assoc_info.related_key => related_id}
-        )
+        do_unsubscribe(config)
 
         List.delete_at(assocs, possible_index)
 

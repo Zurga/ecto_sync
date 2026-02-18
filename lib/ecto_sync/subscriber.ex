@@ -3,7 +3,6 @@ defmodule EctoSync.Subscriber do
   require Logger
   import EctoSync.Helpers
 
-  alias EctoSync.Watcher
   alias Ecto.Association
   alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
 
@@ -53,7 +52,8 @@ defmodule EctoSync.Subscriber do
   end
 
   defp do_subscribe(watcher_identifier, id, opts) do
-    encoded_identifier = get_encoded_label(watcher_identifier)
+    encoded_identifier =
+      get_encoded_label(watcher_identifier)
 
     pids =
       subscriptions(watcher_identifier, id)
@@ -63,7 +63,11 @@ defmodule EctoSync.Subscriber do
       # Logger.debug("EventRegistry | #{inspect({watcher_identifier, id, opts})}")
       Logger.debug("EventRegistryRegister | #{inspect({encoded_identifier, id, opts})}")
 
-      Registry.register(EventRegistry, {encoded_identifier, id}, opts)
+      Registry.register(
+        EventRegistry,
+        {encoded_identifier, id},
+        opts
+      )
 
       # Watcher.subscribe(encoded_identifier, id)
     end
@@ -72,11 +76,11 @@ defmodule EctoSync.Subscriber do
   end
 
   def subscriptions(watcher_identifier, id) do
-    identifiers =
-      case watcher_identifier do
-        {schema, _} -> {primary_key(schema), id}
-        label -> label
-      end
+    identifiers = id
+    # case watcher_identifier do
+    #   {schema, _} -> {primary_key(schema), id}
+    #   label -> label
+    # end
 
     encoded = get_encoded_label(watcher_identifier)
 
@@ -95,7 +99,6 @@ defmodule EctoSync.Subscriber do
     parent_id = primary_key(struct)
     assoc_field = {related_key, parent_id}
     assocs = Map.get(struct, field)
-    # | subscribe_events(struct)
     [{{schema, :inserted}, assoc_field}] ++ [Enum.map(assocs, &subscribe_events/1)]
   end
 
@@ -171,17 +174,17 @@ defmodule EctoSync.Subscriber do
       when is_tuple(watcher_identifier) or is_atom(watcher_identifier) do
     id = (is_list(id) && nil) || id
 
-    try do
-      encoded_identifier = get_encoded_label(watcher_identifier)
+    # try do
+    encoded_identifier = get_encoded_label(watcher_identifier)
 
-      case Watcher.unsubscribe(encoded_identifier, id) do
-        :ok -> Registry.unregister(EventRegistry, {encoded_identifier, id})
-        error -> error
-      end
-    catch
-      ArgumentError ->
-        raise ArgumentError, "no watcher found for #{inspect(watcher_identifier)}"
-    end
+    # case Watcher.unsubscribe(encoded_identifier, id) do
+    Registry.unregister(EventRegistry, {encoded_identifier, id})
+    # error -> error
+    #   end
+    # catch
+    #   ArgumentError ->
+    #     raise ArgumentError, "no watcher found for #{inspect(watcher_identifier)}"
+    # end
   end
 
   def unsubscribe([value | _] = values, opts) when is_struct(value) do
@@ -268,6 +271,15 @@ defmodule EctoSync.Subscriber do
           acc
 
       value ->
+        opts =
+          case assoc_info do
+            %Association.Has{related_key: related_key} ->
+              [parent: {related_key, primary_key(parent)}] ++ opts
+
+            _ ->
+              opts
+          end
+
         events =
           subscribe_events(parent, assoc_info)
           |> add_opts(opts)

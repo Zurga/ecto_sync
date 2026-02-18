@@ -62,9 +62,6 @@ defmodule EctoSync.Helpers do
   def get_encoded_label(watcher_identifier),
     do: :persistent_term.get({EctoSync, watcher_identifier}, watcher_identifier)
 
-  def get_watcher_identifier(label),
-    do: :persistent_term.get({EctoSync, label}, label)
-
   def get_from_cache(%Config{
         repo: repo,
         ref: ref,
@@ -220,6 +217,23 @@ defmodule EctoSync.Helpers do
       %Ecto.Association.HasThrough{through: through} ->
         resolve_through(schema, through)
     end
+  end
+
+  def to_struct(schema, data) do
+    permitted =
+      data
+      |> Map.keys()
+      |> then(fn keys ->
+        if Enum.any?(keys, &is_binary/1) do
+          keys
+          |> Enum.map(&String.to_existing_atom/1)
+        else
+          keys
+        end
+      end)
+
+    Ecto.Changeset.cast(struct(schema), data, permitted)
+    |> Ecto.Changeset.apply_changes()
   end
 
   def walk_preloaded_assocs(value, acc \\ nil, function)

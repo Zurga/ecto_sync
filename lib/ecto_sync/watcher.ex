@@ -68,11 +68,9 @@ defmodule EctoSync.Watcher do
     validate_watcher_running!()
 
     with :ok <- validate_identifier(watcher_identifier),
-         {:ok, {pub_sub_mod, channel_name, debug?}} <-
+         {:ok, {_pub_sub_mod, _channel_name, debug?}} <-
            WatcherServer.pub_sub_subscription_details(watcher_identifier, id) do
       if(debug?, do: debug_log(watcher_identifier, "Subscribing to watcher"))
-
-      # Phoenix.PubSub.subscribe(pub_sub_mod, channel_name)
     else
       {:error, error} ->
         raise ArgumentError, error

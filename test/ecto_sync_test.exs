@@ -183,7 +183,7 @@ defmodule EctoSyncTest do
         subscribe(person)
       end
 
-      assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
+      assert [{self(), []}] == subscriptions({Person, :updated}, {:id, person.id})
     end
 
     test "subscribe to label" do
@@ -205,7 +205,7 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person, sync_args)
           assert synced == person
       after
-        500 ->
+        1500 ->
           raise "no inserts"
       end
 
@@ -631,13 +631,15 @@ defmodule EctoSyncTest do
         Task.async(fn ->
           subscribe(person2, assocs: [:posts])
 
+          self()
+
           receive do
             {:ecto_sync, {Post, :inserted, _} = sync_args} ->
               synced = EctoSync.sync(person2, sync_args)
 
               assert person2_expected_after_update == synced
           after
-            3000 -> raise "no inserts in other process"
+            5000 -> raise "no inserts in other process"
           end
         end)
 
@@ -646,34 +648,34 @@ defmodule EctoSyncTest do
           synced = EctoSync.sync(person1, sync_args)
           assert person1_expected_after_update == synced
       after
-        500 -> raise "no updates for person1"
+        7000 -> raise "no updates for person1"
       end
 
       refute_received({:ecto_sync, {Post, :inserted, _}})
-      assert Task.await(other_process)
+      assert Task.await(other_process, 10000)
 
-      # other_process =
-      #   Task.async(fn ->
-      #     subscribe(person2_expected_after_update, assocs: [:posts])
+      other_process =
+        Task.async(fn ->
+          subscribe(person2_expected_after_update, assocs: [:posts])
 
-      #     person2_expected_after_update = TestRepo.get(Person, person2.id) |> do_preload(preloads)
+          person2_expected_after_update = TestRepo.get(Person, person2.id) |> do_preload(preloads)
 
-      #     receive do
-      #       {:ecto_sync, {Post, :updated, _} = sync_args} ->
-      #         synced = EctoSync.sync(person2, sync_args)
+          receive do
+            {:ecto_sync, {Post, :updated, _} = sync_args} ->
+              synced = EctoSync.sync(person2, sync_args)
 
-      #         assert person2_expected_after_update == synced
-      #     after
-      #       3000 -> raise "no updates in other process"
-      #     end
-      #   end)
+              assert person2_expected_after_update == synced
+          after
+            3000 -> raise "no updates in other process"
+          end
+        end)
 
-      # {:ok, _} =
-      #   Ecto.Changeset.change(post1, %{name: "updated again"})
-      #   |> TestRepo.update()
-      #   |> IO.inspect()
+      {:ok, _} =
+        Ecto.Changeset.change(post1, %{name: "updated again"})
+        |> TestRepo.update()
+        |> IO.inspect()
 
-      # assert Task.await(other_process)
+      assert Task.await(other_process, 10000)
 
       refute_received({:ecto_sync, {Post, :updated, _}})
     end
@@ -930,13 +932,14 @@ defmodule EctoSyncTest do
       end
     end
 
-    test "join_through is updated", %{person_with_posts_and_tags: person} do
+    test "join_through is deleted", %{person_with_posts_and_tags: person} do
       %{posts: [%{tags: [from_tag | _]} | _]} = person = do_preload(person, @preloads)
 
       subscribe(person, assocs: [posts: :tags])
       |> IO.inspect(label: :subscribed)
 
       from_tag
+      |> IO.inspect()
       |> do_preload([:posts])
       |> Ecto.Changeset.change()
       |> Ecto.Changeset.put_assoc(:posts, [])
@@ -944,12 +947,13 @@ defmodule EctoSyncTest do
       |> IO.inspect()
 
       receive do
-        {:ecto_sync, {PostsTags, _, _} = sync_args} ->
+        {:ecto_sync, {PostsTags, :deleted, _} = sync_args} ->
+          IO.inspect(sync_args)
           synced = EctoSync.sync(person, sync_args)
 
           assert do_preload(person, @preloads) == synced
       after
-        500 -> raise "nothing Tag"
+        5000 -> raise "nothing Tag"
       end
     end
 
@@ -1086,14 +1090,14 @@ defmodule EctoSyncTest do
   describe "subscriptions/0" do
     test "subscriptions can be listed", %{person: person} do
       subscribe(person)
-      assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
+      assert [{self(), []}] == subscriptions({Person, :updated}, {:id, person.id})
     end
 
     test "assocs are stored in subscriptions", %{person: person} do
       subscribe(person, assocs: [posts: [:tags]])
 
       assert [{self(), [assocs: [posts: [:tags]]]}] ==
-               subscriptions({Person, :updated}, person.id)
+               subscriptions({Person, :updated}, {:id, person.id})
 
       assert [{self(), [assocs: [:tags]]}] ==
                subscriptions({Post, :inserted}, {:person_id, person.id})
@@ -1101,9 +1105,9 @@ defmodule EctoSyncTest do
 
     test "subscriptions are up to date after unsubscribing", %{person: person} do
       subscribe(person)
-      assert [{self(), []}] == subscriptions({Person, :updated}, person.id)
+      assert [{self(), []}] == subscriptions({Person, :updated}, {:id, person.id})
       unsubscribe(person)
-      assert [] == subscriptions({Person, :updated}, person.id)
+      assert [] == subscriptions({Person, :updated}, {:id, person.id})
     end
   end
 

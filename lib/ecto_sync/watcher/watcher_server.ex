@@ -37,12 +37,6 @@ defmodule EctoSync.Watcher.WatcherServer do
     end
   end
 
-  def broadcast(schema, update_type, values) do
-    label = :persistent_term.get({EctoSync, {schema, :inserted}})
-    {:ok, pid} = find(label)
-    GenServer.call(pid, {:broadcast, update_type, values})
-  end
-
   def start_link({repo_mod, pub_sub_mod, watcher_options}) do
     GenServer.start_link(
       __MODULE__,
@@ -199,12 +193,6 @@ defmodule EctoSync.Watcher.WatcherServer do
     {:reply, watcher_details(state), state}
   end
 
-  @impl true
-  def handle_call({:broadcast, update_type, values}, _from, state) do
-    do_broadcast(update_type, values, state)
-    {:reply, :ok, state}
-  end
-
   defp validate_subscription(state, identifier, column) do
     cond do
       match?({_, :inserted}, identifier) && column == state.options.schema_definition.primary_key ->
@@ -238,58 +226,11 @@ defmodule EctoSync.Watcher.WatcherServer do
 
     %{"type" => type, "values" => returned_values} = Jason.decode!(payload)
 
-    returned_values = Map.new(returned_values, fn {k, v} -> {String.to_existing_atom(k), v} end)
-
     type = String.to_existing_atom(type)
-    do_broadcast(type, returned_values, state)
+
+    EctoSync.Publisher.publish(state.options.schema_definition.table_name, type, returned_values)
+
     {:noreply, state}
-  end
-
-  def do_broadcast(type, values, state) do
-    {schema_event, identifiers} =
-      case state.options.label do
-        nil ->
-          {{state.options.label || state.options.schema_definition.label, type}, values}
-
-        label ->
-          {label, values}
-      end
-
-    topics = topics(type, schema_event, values, state.options.schema_definition)
-
-    ref =
-      case Helpers.get_watcher_identifier(schema_event) do
-        {_mod, :inserted} = watcher -> watcher
-        {mod, _} -> {mod, values.id}
-        label -> {label, values.id}
-      end
-      |> EctoSync.increment_row_ref()
-
-    for topic <- topics do
-      {schema, event, {identifiers, ref}} =
-        message =
-        case :persistent_term.get({EctoSync, schema_event}, schema_event) do
-          {schema, event} ->
-            {schema, event, {values, ref}}
-
-            # label -> {label, event, {identifiers, ref}}
-        end
-
-      # debug_log(
-      #   state.options,
-      #   "Broadcasting to Phoenix PubSub topic `#{topic}`: #{inspect(message)}"
-      # )
-
-      Registry.dispatch(
-        EventRegistry,
-        topic,
-        fn entries ->
-          for {pid, _} <- entries do
-            send(pid, {:ecto_sync, message})
-          end
-        end
-      )
-    end
   end
 
   defp watcher_details(%{unique_label: unique_label, repo_mod: repo_mod, options: options}) do

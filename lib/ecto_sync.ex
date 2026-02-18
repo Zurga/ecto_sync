@@ -57,13 +57,21 @@ defmodule EctoSync do
       |> Enum.uniq()
       |> EctoGraph.new()
 
-    :persistent_term.put(__MODULE__, %{state | schemas: schemas})
+    watchers = Enum.map(state.watchers, &EctoSync.Watcher.Options.WatcherOptions.new(&1, false))
+    state = %{state | watchers: watchers, schemas: schemas}
+
+    :persistent_term.put(__MODULE__, state)
+    Postgrex.Query.module_info()
 
     children = [
       {Cachex, state.cache_name},
       {Phoenix.PubSub, name: state.pub_sub, adapter: PubSub},
       {Watcher, [repo: state.repo, pub_sub: state.pub_sub, watchers: state.watchers]},
-      {Registry, keys: :duplicate, name: EventRegistry}
+      {Registry, keys: :duplicate, name: EventRegistry},
+      {EctoSync.Publisher, watchers: state.watchers}
+      # {EctoSync.Adapters.Postgres,
+      #  [publications: :ecto_sync, slot: :ecto_sync, state: state] ++
+      #    Keyword.take(state.repo.config(), ~w/host database username password/a)}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
