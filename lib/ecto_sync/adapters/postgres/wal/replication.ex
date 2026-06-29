@@ -1,7 +1,7 @@
-defmodule EctoSync.Adapters.Postgres.Replication do
+defmodule EctoSync.Adapters.Postgres.Wal.Replication do
   use Postgrex.ReplicationConnection
 
-  alias EctoSync.Adapters.Postgres.Protocol
+  alias EctoSync.Adapters.Postgres.Wal.Protocol
 
   require Logger
 

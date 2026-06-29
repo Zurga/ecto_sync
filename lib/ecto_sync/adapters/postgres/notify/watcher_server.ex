@@ -1,5 +1,5 @@
 # Original code copied and maybe modified from EctoWatch
-defmodule EctoSync.Watcher.WatcherServer do
+defmodule EctoSync.Adapters.Postgres.Notify.WatcherServer do
   @moduledoc """
   Internal GenServer for the individual change watchers which are configured by end users
 
@@ -8,7 +8,7 @@ defmodule EctoSync.Watcher.WatcherServer do
 
   alias EctoSync.Watcher.DB
   alias EctoSync.Helpers
-  alias EctoSync.Watcher.Options.WatcherOptions
+  alias EctoSync.Options.WatcherOptions
 
   use GenServer
 

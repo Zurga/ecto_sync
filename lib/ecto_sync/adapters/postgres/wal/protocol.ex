@@ -1,8 +1,8 @@
-defmodule EctoSync.Adapters.Postgres.Protocol do
+defmodule EctoSync.Adapters.Postgres.Wal.Protocol do
   import Postgrex.PgOutput.Messages
   require Logger
 
-  alias EctoSync.Adapters.Postgres.Tx
+  alias EctoSync.Adapters.Postgres.Wal.Tx
   alias Postgrex.PgOutput.Lsn
 
   @type t :: %__MODULE__{

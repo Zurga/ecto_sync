@@ -1,4 +1,4 @@
-defmodule EctoSync.Adapters.Postgres.Tx.Operation do
+defmodule EctoSync.Adapters.Postgres.Wal.Tx.Operation do
   @moduledoc """
   Describes a change within a transaction.
   The `type` field annotates the change that was persisted to the wal.

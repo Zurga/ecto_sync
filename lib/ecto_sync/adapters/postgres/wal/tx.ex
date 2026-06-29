@@ -1,4 +1,4 @@
-defmodule EctoSync.Adapters.Postgres.Tx do
+defmodule EctoSync.Adapters.Postgres.Wal.Tx do
   import Postgrex.PgOutput.Messages
   alias Postgrex.PgOutput.Lsn
 
