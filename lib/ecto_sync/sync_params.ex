@@ -1,4 +1,4 @@
-defmodule EctoSync.Config do
+defmodule EctoSync.SyncParams do
   @moduledoc false
 
   @derive {Inspect, only: ~w/id ref schema event/a}
@@ -15,14 +15,14 @@ defmodule EctoSync.Config do
             preloads: [],
             pub_sub: nil,
             ref: nil,
-            repo: nil,
+            repo_mod: nil,
             schema: nil
 
   def new({label, {identifiers, ref}}, opts) when is_atom(label) do
-    {config, state} = init(identifiers, ref, opts)
+    {sync_params, options} = init(identifiers, ref, opts)
 
     {%{table_name: table, primary_key: primary_key, columns: columns}, event, _} =
-      state.watchers
+      options.watchers
       |> Enum.find(fn
         {_, _, opts} ->
           Keyword.get(opts, :label) == label
@@ -36,7 +36,7 @@ defmodule EctoSync.Config do
     keys = [primary_key | columns]
 
     %{
-      config
+      sync_params
       | schema: table,
         event: event,
         get_fun: fn table, id ->
@@ -45,22 +45,23 @@ defmodule EctoSync.Config do
           from(table)
           |> select([t], ^keys)
           |> where(^filters)
-          |> config.repo.one
+          |> sync_params.repo_mod.one
         end
     }
   end
 
   def new({schema, event, {identifiers, ref}}, opts) do
-    {config, _} = init(identifiers, ref, opts)
-    %{config | schema: schema, event: event, get_fun: &config.repo.get(&1, &2)}
+    {sync_params, _} = init(identifiers, ref, opts)
+    %{sync_params | schema: schema, event: event, get_fun: &sync_params.repo_mod.get(&1, &2)}
   end
 
   defp init(%{id: id} = identifiers, ref, opts) do
     assocs = Map.drop(identifiers, [:id])
 
-    state = :persistent_term.get(EctoSync)
+    options = :persistent_term.get(EctoSync)
 
-    global = Map.take(state, ~w/cache_name schemas pub_sub repo/a)
+    options =
+      Map.take(options, ~w/cache_name schemas pub_sub repo_mod/a)
 
     {%__MODULE__{
        id: id,
@@ -68,9 +69,9 @@ defmodule EctoSync.Config do
        assocs: assocs,
        preloads: (opts[:preloads] || %{}) |> Helpers.normalize_to_preloads()
      }
-     |> Map.merge(global), state}
+     |> Map.merge(options), options}
   end
 
-  def maybe_put_get_fun(config, nil), do: config
-  def maybe_put_get_fun(config, get_fun), do: Map.put(config, :get_fun, get_fun)
+  def maybe_put_get_fun(sync_params, nil), do: sync_params
+  def maybe_put_get_fun(sync_params, get_fun), do: Map.put(sync_params, :get_fun, get_fun)
 end

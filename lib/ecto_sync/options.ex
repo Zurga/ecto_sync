@@ -1,20 +1,38 @@
 # Original code copied and maybe modified from EctoWatch
-defmodule EctoSync.Watcher.Options do
+defmodule EctoSync.Options do
   @moduledoc false
 
-  alias EctoSync.Watcher.Options.WatcherOptions
+  alias EctoSync.Options.WatcherOptions
 
-  defstruct [:repo_mod, :pub_sub_mod, :watchers, :debug?]
+  @cache_name :ecto_sync
+  defstruct ~w/adapter cache_name schemas repo_mod pub_sub_mod watchers debug?/a
 
   def new(opts) do
+    watchers = opts[:watchers]
+
+    schemas =
+      watchers
+      |> Enum.map(fn
+        {%{table_name: table}, _, _} ->
+          table
+
+        tuple ->
+          elem(tuple, 0)
+      end)
+      |> Enum.uniq()
+      |> EctoGraph.new()
+
     %__MODULE__{
+      adapter: opts[:adapter],
       repo_mod: opts[:repo],
       pub_sub_mod: opts[:pub_sub],
+      cache_name: opts[:cache_name] || @cache_name,
       debug?: opts[:debug?],
-      watchers: opts[:watchers]
-      # Enum.map(opts[:watchers], fn watcher_opts ->
-      #   WatcherOptions.new(watcher_opts, opts[:debug?])
-      # end)
+      schemas: schemas,
+      watchers:
+        Enum.map(watchers, fn watcher_opts ->
+          WatcherOptions.new(watcher_opts, opts[:debug?])
+        end)
     }
   end
 
@@ -24,14 +42,11 @@ defmodule EctoSync.Watcher.Options do
         type: {:custom, __MODULE__, :check_valid_repo_module, []},
         required: true
       ],
-      pub_sub: [
-        type: {:custom, __MODULE__, :check_valid_pubsub_module, []},
-        required: true
-      ],
       watchers: [
         type: {:custom, WatcherOptions, :validate_list, []},
         required: true
       ],
+      adapter: [type: :atom, required: true],
       debug?: [
         type: :boolean,
         required: false,

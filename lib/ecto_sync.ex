@@ -8,18 +8,18 @@ defmodule EctoSync do
   @type subscriptions() :: list({EctoWatch.watcher_identifier(), term()})
   @type schema_or_list_of_schemas() :: Ecto.Schema.t() | list(Ecto.Schema.t())
   @events ~w/inserted updated deleted/a
-  @cache_name :ecto_sync
   @counter_key {__MODULE__, :repo_counters}
 
   defstruct pub_sub: nil,
             repo: nil,
             cache_name: nil,
             watchers: [],
+            adapter: nil,
             schemas: nil
 
   use Supervisor
   require Logger
-  alias EctoSync.{Config, PubSub, Subscriber, Syncer, Watcher}
+  alias EctoSync.{Options, Subscriber, Syncer, SyncParams, Watcher}
 
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
@@ -34,8 +34,8 @@ defmodule EctoSync do
   See `sync/3` for options available.
   """
   def get(event, opts \\ []) do
-    config = Config.new(event, opts)
-    Syncer.sync(:cached, config)
+    sync_params = SyncParams.new(event, opts)
+    Syncer.sync(:cached, sync_params)
   end
 
   def increment_row_ref(keyable) do
@@ -44,34 +44,16 @@ defmodule EctoSync do
 
   @impl true
   @doc false
-  def init(state) do
-    schemas =
-      state.watchers
-      |> Enum.map(fn
-        {%{table_name: table}, _, _} ->
-          table
-
-        tuple ->
-          elem(tuple, 0)
-      end)
-      |> Enum.uniq()
-      |> EctoGraph.new()
-
-    watchers = Enum.map(state.watchers, &EctoSync.Watcher.Options.WatcherOptions.new(&1, false))
-    state = %{state | watchers: watchers, schemas: schemas}
-
-    :persistent_term.put(__MODULE__, state)
-    Postgrex.Query.module_info()
+  def init(options) do
+    :persistent_term.put(__MODULE__, options)
 
     children = [
-      {Cachex, state.cache_name},
-      {Phoenix.PubSub, name: state.pub_sub, adapter: PubSub},
-      {Watcher, [repo: state.repo, pub_sub: state.pub_sub, watchers: state.watchers]},
+      {Cachex, options.cache_name},
+      # {Phoenix.PubSub, name: options.pub_sub, adapter: PubSub},
+      # {Watcher, [repo: options.repo, pub_sub: options.pub_sub, watchers: options.watchers]},
       {Registry, keys: :duplicate, name: EventRegistry},
-      {EctoSync.Publisher, watchers: state.watchers}
-      # {EctoSync.Adapters.Postgres,
-      #  [publications: :ecto_sync, slot: :ecto_sync, state: state] ++
-      #    Keyword.take(state.repo.config(), ~w/host database username password/a)}
+      {EctoSync.Publisher, watchers: options.watchers},
+      {options.adapter, options}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -101,15 +83,9 @@ defmodule EctoSync do
   - `:pub_sub`, the PubSub module to use for sending events, defaults to `:ecto_sync_pub_sub`.
   """
   def start_link(opts \\ [name: __MODULE__]) do
-    state =
-      %__MODULE__{
-        cache_name: opts[:cache_name] || @cache_name,
-        repo: opts[:repo],
-        pub_sub: opts[:pub_sub] || :ecto_sync_pub_sub,
-        watchers: opts[:watchers]
-      }
+    options = Options.new(opts)
 
-    Supervisor.start_link(__MODULE__, state, name: __MODULE__)
+    Supervisor.start_link(__MODULE__, options, name: __MODULE__)
   end
 
   @doc """
@@ -182,14 +158,14 @@ defmodule EctoSync do
   def sync(value, sync_params, opts)
       when is_list(value) or is_struct(value) or is_nil(value) or is_map(value) do
     if should_update?(sync_params) or opts[:force] do
-      config = Config.new(sync_params, opts)
-      Syncer.sync(value, config)
+      sync_params = SyncParams.new(sync_params, opts)
+      Syncer.sync(value, sync_params)
     else
       value
     end
   end
 
-  def sync(value, _sync_config, _opts), do: value
+  def sync(value, _sync_params, _opts), do: value
 
   @doc """
 
@@ -217,7 +193,7 @@ defmodule EctoSync do
   """
   @spec unsubscribe(schema_or_list_of_schemas() | Watcher.watcher_identifier(), term()) ::
           list(term())
-  defdelegate unsubscribe(alue, id \\ []), to: Subscriber
+  defdelegate unsubscribe(value, id \\ []), to: Subscriber
 
   @spec watchers(list(), module(), list()) :: list()
   @doc """

@@ -1,5 +1,5 @@
 # Original code copied and maybe modified from EctoWatch
-defmodule EctoSync.Watcher.Options.WatcherOptions do
+defmodule EctoSync.Options.WatcherOptions do
   @moduledoc false
 
   alias EctoSync.Helpers

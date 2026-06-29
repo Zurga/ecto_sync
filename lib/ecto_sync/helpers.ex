@@ -2,7 +2,7 @@ defmodule EctoSync.Helpers do
   @moduledoc false
 
   require Logger
-  alias EctoSync.Config
+  alias EctoSync.SyncParams
 
   def debug_log(watcher_identifier, message) do
     Logger.debug("EctoSync | #{inspect(watcher_identifier)} | #{inspect(self())} | #{message}")
@@ -62,8 +62,8 @@ defmodule EctoSync.Helpers do
   def get_encoded_label(watcher_identifier),
     do: :persistent_term.get({EctoSync, watcher_identifier}, watcher_identifier)
 
-  def get_from_cache(%Config{
-        repo: repo,
+  def get_from_cache(%SyncParams{
+        repo_mod: repo,
         ref: ref,
         cache_name: cache_name,
         id: id,
