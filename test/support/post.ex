@@ -1,6 +1,6 @@
 defmodule Post do
   @moduledoc false
-  use Ecto.Schema
+  use Schema
 
   schema "posts" do
     field(:name, :string)
@@ -11,10 +11,14 @@ defmodule Post do
 
     many_to_many(:dup_tags, Tag,
       join_through: PostsTags,
-      preload_order: [asc: :id],
+      preload_order: [asc: :name],
       where: [name: "test"]
     )
 
-    many_to_many(:labels, Label, join_through: "posts_labels", preload_order: [asc: :id])
+    many_to_many(:labels, Label,
+      join_through: PostsLabels,
+      preload_order: [asc: :name]
+      # join_keys: [post_id: :id, label_id: :id]
+    )
   end
 end

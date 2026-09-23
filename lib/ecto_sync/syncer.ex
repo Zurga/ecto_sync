@@ -3,7 +3,6 @@ defmodule EctoSync.Syncer do
   alias EctoSync.{SyncParams, Subscriber}
   alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany, NotLoaded}
   import EctoSync.Helpers
-  import Ecto.Query
 
   def sync(from_cache_or_value, params)
 
@@ -88,7 +87,15 @@ defmodule EctoSync.Syncer do
     [new]
   end
 
-  defp do_sync([%schema{} | _] = values, new, %{event: :inserted, schema: schema} = params) do
+  defp do_sync(
+         [%schema{} | _] = values,
+         new,
+         %{event: :inserted, schema: schema, strict: true} = params
+       ) do
+    Enum.map(values, &do_sync(&1, new, params)) ++ [new]
+  end
+
+  defp do_sync([%_schema{} | _] = values, new, %{event: :inserted, strict: false} = params) do
     Enum.map(values, &do_sync(&1, new, params)) ++ [new]
   end
 
@@ -99,6 +106,29 @@ defmodule EctoSync.Syncer do
 
   defp do_sync(values, new, params) when is_list(values),
     do: Enum.map(values, &do_sync(&1, new, params))
+
+  defp do_sync(%value_schema{} = value, deleted_id, %{event: :deleted, schema: schema} = params) do
+    case Map.get(params.schemas.join_modules, schema) do
+      nil ->
+        params.schemas
+        |> EctoGraph.paths(value_schema, schema)
+        |> EctoGraph.prewalk(value, &assoc_update(&1, &2, &3, deleted_id, params))
+
+      associated_schemas ->
+        associated_schemas
+        |> Enum.reduce(value, fn {parent, {key, child}}, acc ->
+          id = params.assocs[key]
+
+          params.schemas
+          |> EctoGraph.paths(value_schema, parent)
+          |> EctoGraph.prewalk(acc, fn _acc, assoc, _assoc_info ->
+            params.schemas
+            |> EctoGraph.paths(parent, child)
+            |> EctoGraph.prewalk(assoc, &assoc_update(&1, &2, &3, id, params))
+          end)
+        end)
+    end
+  end
 
   defp do_sync(%value_schema{} = value, %new_schema{} = new, params) when is_struct(value) do
     if same_record?(value, new) do

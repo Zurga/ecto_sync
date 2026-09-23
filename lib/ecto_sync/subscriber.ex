@@ -6,9 +6,10 @@ defmodule EctoSync.Subscriber do
   alias Ecto.Association
   alias Ecto.Association.{BelongsTo, Has, HasThrough, ManyToMany}
 
+  @type watcher_identifier() :: {atom(), atom()} | atom()
   @events ~w/inserted updated deleted/a
 
-  def subscribe(watcher_identifier_or_struct, id \\ nil)
+  def subscribe(watcher_identifier_or_struct, opts \\ [])
 
   def subscribe(values, opts) when is_list(values) do
     values
@@ -21,9 +22,14 @@ defmodule EctoSync.Subscriber do
     end)
   end
 
-  def subscribe(schema_mod, event)
+  def subscribe({schema_mod, event} = watcher_identifier, opts)
       when is_atom(schema_mod) and is_atom(event) and not is_nil(event) do
-    [do_subscribe({schema_mod, event}, nil, [])]
+    watcher_identifier
+    |> subscribe_events()
+    |> add_opts(opts)
+    |> Enum.map(fn {{watcher_identifier, id}, opts} ->
+      do_subscribe(watcher_identifier, id, opts)
+    end)
   end
 
   def subscribe([value | _] = list, opts) when is_struct(value),
@@ -47,8 +53,16 @@ defmodule EctoSync.Subscriber do
     |> Enum.uniq()
   end
 
-  def subscribe(watcher_identifier, id) do
-    Enum.map(subscribe_events(watcher_identifier, id), &do_subscribe(&1, id, []))
+  def subscribe(watcher_identifier, id) when is_binary(id) or is_number(id) do
+    watcher_identifier
+    |> subscribe_events(id)
+    |> Enum.map(&do_subscribe(&1, id, []))
+  end
+
+  def subscribe(label, []) when is_atom(label) do
+    label
+    |> subscribe_events(label)
+    |> Enum.map(&do_subscribe(&1, nil, preloads: []))
   end
 
   defp do_subscribe(watcher_identifier, id, opts) do
@@ -76,15 +90,8 @@ defmodule EctoSync.Subscriber do
   end
 
   def subscriptions(watcher_identifier, id) do
-    identifiers = id
-    # case watcher_identifier do
-    #   {schema, _} -> {primary_key(schema), id}
-    #   label -> label
-    # end
-
     encoded = get_encoded_label(watcher_identifier)
-
-    Registry.lookup(EventRegistry, {encoded, identifiers})
+    Registry.lookup(EventRegistry, {encoded, id})
   end
 
   def subscribe_events(label_or_schema, assoc \\ nil)
@@ -96,7 +103,7 @@ defmodule EctoSync.Subscriber do
   end
 
   def subscribe_events(struct, %Has{related_key: related_key, related: schema, field: field}) do
-    parent_id = primary_key(struct)
+    parent_id = id(struct)
     assoc_field = {related_key, parent_id}
     assocs = Map.get(struct, field)
     [{{schema, :inserted}, assoc_field}] ++ [Enum.map(assocs, &subscribe_events/1)]
@@ -117,7 +124,7 @@ defmodule EctoSync.Subscriber do
         join_through: join_through,
         join_keys: [{parent_key, _} | _]
       }) do
-    id = primary_key(struct)
+    id = id(struct)
 
     Enum.map(@events, &{{join_through, &1}, {parent_key, id}})
   end
@@ -135,7 +142,7 @@ defmodule EctoSync.Subscriber do
   end
 
   def subscribe_events(%schema{} = value, _) when is_struct(value) do
-    id = primary_key(value)
+    id = id(value)
 
     if ecto_schema_mod?(schema) do
       ~w/updated deleted/a
@@ -150,8 +157,11 @@ defmodule EctoSync.Subscriber do
       {schema, :all} ->
         Enum.map(@events, &{{schema, &1}, {primary_key(schema), id}})
 
-      _ ->
-        List.wrap(watcher_identifier)
+      {_, :inserted} ->
+        [{watcher_identifier, nil}]
+
+      {_schema, _event} ->
+        [{watcher_identifier, id}]
     end
   end
 
@@ -163,6 +173,16 @@ defmodule EctoSync.Subscriber do
     self() in pids
   end
 
+  @doc """
+  Unsubscribe from notifications from watchers that you previously subscribe. It
+  receives the same params for `subscribe/2`.
+
+  Examples:
+
+      iex> EctoSync.Watcher.unsubscribe({Comment, :updated})
+      iex> EctoSync.Watcher.unsubscribe({Comment, :updated}, {:post_id, post_id})
+  """
+  @spec unsubscribe(watcher_identifier(), term()) :: :ok | {:error, term()}
   def unsubscribe(value, opts \\ [])
 
   def unsubscribe(watcher_identifier, id) when is_binary(watcher_identifier) do
@@ -266,7 +286,7 @@ defmodule EctoSync.Subscriber do
               {related, related_key}
           end
 
-        ([{{related, :inserted}, {related_key, primary_key(parent)}}]
+        ([{{related, :inserted}, {related_key, id(parent)}}]
          |> Enum.map(&add_opts(&1, opts))) ++
           acc
 
@@ -274,7 +294,7 @@ defmodule EctoSync.Subscriber do
         opts =
           case assoc_info do
             %Association.Has{related_key: related_key} ->
-              [parent: {related_key, primary_key(parent)}] ++ opts
+              [parent: {related_key, id(parent)}] ++ opts
 
             _ ->
               opts

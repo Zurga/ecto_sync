@@ -72,7 +72,7 @@ defmodule EctoSync.Adapters.Postgres.Wal.Replication do
       Protocol.handle_message(msg, state.protocol)
 
     if not is_nil(tx) do
-      Enum.map(tx.operations, fn %{type: type, table: table} = operation ->
+      Enum.each(tx.operations, fn %{type: type, table: table} = operation ->
         EctoSync.Publisher.publish(
           table,
           type,

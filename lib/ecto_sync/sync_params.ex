@@ -1,7 +1,7 @@
 defmodule EctoSync.SyncParams do
   @moduledoc false
 
-  @derive {Inspect, only: ~w/id ref schema event/a}
+  @derive {Inspect, only: ~w/id ref schema event assocs/a}
   alias EctoSync.Helpers
   import Ecto.Query
 
@@ -16,7 +16,8 @@ defmodule EctoSync.SyncParams do
             pub_sub: nil,
             ref: nil,
             repo_mod: nil,
-            schema: nil
+            schema: nil,
+            strict: false
 
   def new({label, {identifiers, ref}}, opts) when is_atom(label) do
     {sync_params, options} = init(identifiers, ref, opts)
@@ -67,7 +68,8 @@ defmodule EctoSync.SyncParams do
        id: id,
        ref: ref,
        assocs: assocs,
-       preloads: (opts[:preloads] || %{}) |> Helpers.normalize_to_preloads()
+       preloads: (opts[:preloads] || %{}) |> Helpers.normalize_to_preloads(),
+       strict: opts[:strict] || false
      }
      |> Map.merge(options), options}
   end
