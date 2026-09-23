@@ -67,6 +67,7 @@ defmodule EctoSync.MixProject do
       {:phoenix_pubsub, ">= 1.0.0"},
       {:jason, ">= 1.0.0"},
       {:ecto_graph, "~> 0.2.0"},
+      {:ecto, "~> 3.14"},
       {:ecto_sql, ">= 3.0.0"},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test]},
       {:postgrex_pgoutput, "~> 0.2.0"},
