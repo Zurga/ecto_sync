@@ -1,6 +1,6 @@
 defmodule FavouritePeople do
   @moduledoc false
-  use Ecto.Schema
+  use Schema
 
   schema "favourite_people" do
     belongs_to(:parent, Person)

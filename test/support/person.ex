@@ -1,6 +1,6 @@
 defmodule Person do
   @moduledoc false
-  use Ecto.Schema
+  use Schema
 
   schema "persons" do
     field(:name, :string)

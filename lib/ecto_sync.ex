@@ -8,14 +8,15 @@ defmodule EctoSync do
   @type subscriptions() :: list({EctoWatch.watcher_identifier(), term()})
   @type schema_or_list_of_schemas() :: Ecto.Schema.t() | list(Ecto.Schema.t())
   @events ~w/inserted updated deleted/a
-  @counter_key {__MODULE__, :repo_counters}
+  @counter_key {EctoSync, :id_counters}
 
   defstruct pub_sub: nil,
             repo: nil,
             cache_name: nil,
             watchers: [],
             adapter: nil,
-            schemas: nil
+            schemas: nil,
+            ref_counter: nil
 
   use Supervisor
   require Logger
@@ -38,21 +39,43 @@ defmodule EctoSync do
     Syncer.sync(:cached, sync_params)
   end
 
+  @doc false
   def increment_row_ref(keyable) do
     update_counter(keyable, &(&1 + 1))
+  end
+
+  @doc false
+  def remove_row_ref(keyable) do
+    update_counter(keyable, nil)
+  end
+
+  @doc false
+  def get_local_id_counters() do
+    Process.get(@counter_key, %{})
+  end
+
+  @doc false
+  def put_local_id_counters(counters) do
+    Process.put(@counter_key, counters)
   end
 
   @impl true
   @doc false
   def init(options) do
-    :persistent_term.put(__MODULE__, options)
+    global_counter_table = :ets.new(EctoSync.Refs, [:public])
+
+    :persistent_term.put(
+      __MODULE__,
+      Map.put(options, :global_counter_table, global_counter_table)
+    )
 
     children = [
       {Cachex, options.cache_name},
       # {Phoenix.PubSub, name: options.pub_sub, adapter: PubSub},
       # {Watcher, [repo: options.repo, pub_sub: options.pub_sub, watchers: options.watchers]},
       {Registry, keys: :duplicate, name: EventRegistry},
-      {EctoSync.Publisher, watchers: options.watchers},
+      {EctoSync.Publisher,
+       watchers: options.watchers, global_counter_table: global_counter_table},
       {options.adapter, options}
     ]
 
@@ -62,7 +85,7 @@ defmodule EctoSync do
   @doc """
   Determines whether or not the event was sent by this process
   """
-  def should_update?({_schema, _event, {_, ref}} = sync_params) do
+  def should_update?({schema, event, {%{id: id}, ref}} = sync_params) do
     current = get_row_ref(sync_params)
 
     if is_nil(current) do
@@ -74,18 +97,27 @@ defmodule EctoSync do
   end
 
   @doc """
-  Starts EctoSync. 
+  Starts EctoSync.
 
   ## Options
+  - `:adapter`, the adapter to use with Postgres, Notify or Wal.
   - `:cache_name`, the name of the cache that used to cache changes
   - `:repo`, the repo to track changes in.
   - `:watchers`, a list of watchers that EctoSync will pass on to EctoWatch.
   - `:pub_sub`, the PubSub module to use for sending events, defaults to `:ecto_sync_pub_sub`.
   """
   def start_link(opts \\ [name: __MODULE__]) do
-    options = Options.new(opts)
+    case EctoSync.Options.validate(opts) do
+      {:ok, validated_opts} ->
+        options = EctoSync.Options.new(validated_opts)
 
-    Supervisor.start_link(__MODULE__, options, name: __MODULE__)
+        validate_watcher_uniqueness(options.watchers)
+
+        Supervisor.start_link(__MODULE__, options, name: __MODULE__)
+
+      {:error, errors} ->
+        raise ArgumentError, "Invalid options: #{Exception.message(errors)}"
+    end
   end
 
   @doc """
@@ -158,7 +190,9 @@ defmodule EctoSync do
   def sync(value, sync_params, opts)
       when is_list(value) or is_struct(value) or is_nil(value) or is_map(value) do
     if should_update?(sync_params) or opts[:force] do
-      sync_params = SyncParams.new(sync_params, opts)
+      sync_params =
+        SyncParams.new(sync_params, opts)
+
       Syncer.sync(value, sync_params)
     else
       value
@@ -394,36 +428,117 @@ defmodule EctoSync do
   defp coerce_to_ref_key({_ecto_schema, _event_or_id} = key), do: key
 
   defp coerce_to_ref_key({schema, event, {%{id: id}, _ref}}) do
-    case event do
-      :inserted = event -> {schema, event}
-      _other -> {schema, id}
-    end
+    # id
+    # case event do
+    #   :inserted = event -> {schema, id}
+    #   _other -> {schema, id}
+    # end
+    {schema, id}
   end
 
-  defp coerce_to_ref_key(%Ecto.Changeset{data: struct}) do
-    case struct.__meta__.state do
-      :loaded -> coerce_to_ref_key(struct)
-      :built -> {struct, :inserted}
-    end
+  defp coerce_to_ref_key(%Ecto.Changeset{data: %ecto_schema{}} = changeset) do
+    id =
+      Enum.map(ecto_schema.__schema__(:primary_key), &Ecto.Changeset.get_field(changeset, &1))
+      |> Enum.at(0)
+
+    {ecto_schema, id}
+    # id
   end
 
   defp coerce_to_ref_key(%ecto_schema{} = struct) do
-    id = Enum.map(ecto_schema.__schema__(:primary_key), &Map.get(struct, &1))
+    id = Enum.map(ecto_schema.__schema__(:primary_key), &Map.get(struct, &1)) |> Enum.at(0)
     {ecto_schema, id}
+    # id
   end
 
   defp get_row_ref(keyable) do
     key = coerce_to_ref_key(keyable)
-    counter_map = Process.get(@counter_key, %{})
+
+    counter_map = get_local_id_counters()
+
     counter_map[key]
+  end
+
+  defp update_counter(keyable, nil) do
+    key = coerce_to_ref_key(keyable)
+
+    with %{global_counter_table: global_counter_table} <- :persistent_term.get(__MODULE__, nil) do
+      global_count = :ets.delete(global_counter_table, key)
+
+      updated =
+        get_local_id_counters()
+        |> Map.drop([key])
+
+      put_local_id_counters(updated)
+
+      updated[key]
+    end
   end
 
   defp update_counter(keyable, fun) do
     key = coerce_to_ref_key(keyable)
-    counter_map = Process.get(@counter_key, %{})
-    updated = Map.update(counter_map, key, 1, fun)
-    Process.put(@counter_key, updated)
 
-    updated[key]
+    with %{global_counter_table: global_counter_table} <- :persistent_term.get(__MODULE__, nil) do
+      global_count =
+        :ets.lookup_element(global_counter_table, key, 2, 0)
+
+      counter_map =
+        get_local_id_counters()
+
+      updated =
+        counter_map
+        |> Map.get(key, global_count)
+        |> fun.()
+        |> case do
+          0 -> Map.drop(counter_map, [key])
+          count -> Map.put(counter_map, key, count)
+        end
+
+      put_local_id_counters(updated)
+
+      updated[key]
+    end
+  end
+
+  defp validate_watcher_uniqueness(watcher_options) do
+    {without_labels, with_labels} = Enum.split_with(watcher_options, &(&1.label == nil))
+
+    duplicate_labels =
+      with_labels
+      |> Enum.map(& &1.label)
+      |> duplicate_values()
+
+    duplicate_schema_and_update_types =
+      without_labels
+      |> Enum.map(&{&1.schema_definition.label, &1.update_type})
+      |> duplicate_values()
+
+    error_messages =
+      [
+        if duplicate_labels != [] do
+          """
+          The following labels are duplicated across watchers: #{Enum.join(duplicate_labels, ", ")}
+          """
+        end,
+        if duplicate_schema_and_update_types != [] do
+          """
+          The following schema and update type combinations are duplicated across watchers:
+
+            #{Enum.map_join(duplicate_schema_and_update_types, "\n\n  ", &inspect/1)}
+          """
+        end
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if error_messages != [] do
+      raise ArgumentError, Enum.join(error_messages, "\n")
+    end
+  end
+
+  defp duplicate_values(values) do
+    values
+    |> Enum.group_by(&Function.identity/1)
+    |> Enum.filter(fn {_, values} -> length(values) >= 2 end)
+    |> Enum.map(fn {_, [value | _]} -> value end)
   end
 end

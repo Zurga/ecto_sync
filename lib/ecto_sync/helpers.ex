@@ -93,9 +93,13 @@ defmodule EctoSync.Helpers do
         value
 
       {:error, error} ->
-        IO.inspect(error, label: :cachex_error)
         error
     end
+  end
+
+  def id(%{__struct__: schema_mod} = value) when is_struct(value) do
+    primary_key(schema_mod)
+    |> then(&Map.get(value, &1))
   end
 
   def kw_deep_merge([{k1, v1} | list1], [{k1, v1} | list2]) do
@@ -166,9 +170,10 @@ defmodule EctoSync.Helpers do
   def nested_sort([{k, v} | rest]), do: [{k, nested_sort(v)} | nested_sort(rest)]
   def nested_sort(list), do: Enum.sort(list)
 
+  def primary_key(%Ecto.Changeset{data: data}) when is_struct(data), do: primary_key(data)
+
   def primary_key(%{__struct__: schema_mod} = value) when is_struct(value) do
     primary_key(schema_mod)
-    |> then(&Map.get(value, &1))
   end
 
   def primary_key(schema_mod) when is_atom(schema_mod) do

@@ -1,6 +1,6 @@
 defmodule Label do
   @moduledoc false
-  use Ecto.Schema
+  use Schema
 
   schema "labels" do
     field(:name, :string)

@@ -54,7 +54,7 @@ defmodule EctoSync.Options do
       ]
     ]
 
-    NimbleOptions.validate(opts, schema)
+    NimbleOptions.validate(opts, NimbleOptions.new!(schema))
   end
 
   def check_valid_repo_module(repo_mod) when is_atom(repo_mod) do

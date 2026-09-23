@@ -75,6 +75,14 @@ defmodule EctoSync.MixProject do
   end
 
   defp aliases do
-    [test: ["ecto.create --quiet -r TestRepo", "ecto.migrate --quiet -r TestRepo", "test"]]
+    [
+      test: [
+        "ecto.create --quiet -r TestRepo",
+        "ecto.create -r TestSyncRepo",
+        "ecto.migrate --quiet -r TestRepo",
+        "ecto.migrate -r TestSyncRepo --migrations-path priv/test_repo/migrations",
+        "test"
+      ]
+    ]
   end
 end

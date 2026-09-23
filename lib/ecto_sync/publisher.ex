@@ -1,14 +1,16 @@
 defmodule EctoSync.Publisher do
-  import EctoSync.Helpers, only: [get_encoded_label: 1, ecto_schema_mod?: 1]
+  import EctoSync.Helpers, only: [ecto_schema_mod?: 1]
+  require Logger
   use GenServer
 
   def start_link(opts) do
-    watchers = opts[:watchers]
-    GenServer.start_link(__MODULE__, watchers, name: __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  def init(watchers) do
-    {:ok, %{watchers: watchers}}
+  def init(opts) do
+    watchers = opts[:watchers]
+    global_counter_table = opts[:global_counter_table]
+    {:ok, %{watchers: watchers, global_counter_table: global_counter_table}}
   end
 
   def publish(schema_or_table, event, values) do
@@ -22,7 +24,10 @@ defmodule EctoSync.Publisher do
     GenServer.cast(__MODULE__, {:publish, table, event, values})
   end
 
-  def handle_cast({:publish, table, event, values}, state) do
+  def handle_cast(
+        {:publish, table, event, values},
+        %{global_counter_table: global_counter_table} = state
+      ) do
     %{
       schema_definition: %{primary_key: primary_key} = schema_definition,
       extra_columns: extra_columns
@@ -40,15 +45,9 @@ defmodule EctoSync.Publisher do
       Map.take(values, ([primary_key] ++ extra_columns) |> Enum.map(&to_string/1))
       |> Map.new(fn {k, v} -> {String.to_existing_atom(k), v} end)
 
-    id = Map.get(values, primary_key)
+    id = Map.get(identifiers, primary_key)
 
-    ref =
-      case get_encoded_label({schema, event}) do
-        {_mod, :inserted} = watcher -> watcher
-        {mod, _} -> {mod, {primary_key, id}}
-        label -> {label, {primary_key, id}}
-      end
-      |> EctoSync.increment_row_ref()
+    ref = :ets.update_counter(global_counter_table, id, 1, {id, 0})
 
     if event == :inserted do
       [nil]
@@ -63,13 +62,12 @@ defmodule EctoSync.Publisher do
 
       EctoSync.Subscriber.subscriptions({schema, event}, identifier)
       |> Enum.map(fn {pid, opts} ->
-        IO.inspect({pid, opts, identifiers})
-
         case opts[:parent] do
           {key, id} ->
             # The has_many assoc has moved away from this subscription
             if identifiers[key] != id do
               # send(pid, {:ecto_sync, {schema, :inserted, {identifier, ref}}})
+              Logger.debug("publishing insert to #{inspect(pid)}")
               publish(table, :inserted, values)
             end
 
