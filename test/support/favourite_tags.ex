@@ -1,6 +1,6 @@
 defmodule FavouriteTags do
   @moduledoc false
-  use Ecto.Schema
+  use Schema
 
   schema "favourite_tags" do
     belongs_to(:person, Person)

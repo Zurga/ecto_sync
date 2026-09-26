@@ -1,12 +1,12 @@
 # Original code copied and maybe modified from EctoWatch
-defmodule EctoSync.Watcher.WatcherSupervisor do
+defmodule EctoSync.Adapters.Postgres.Notify.WatcherSupervisor do
   @moduledoc """
   Internal Supervisor for postgres notification watchers (`EctoSync.Watcher.WatcherServer`)
 
   Used internally, but you'll see it in your application supervision tree.
   """
 
-  alias EctoSync.Watcher.WatcherServer
+  alias EctoSync.Adapters.Postgres.Notify.WatcherServer
 
   use Supervisor
 
@@ -36,7 +36,7 @@ defmodule EctoSync.Watcher.WatcherSupervisor do
       pid ->
         {:ok,
          Supervisor.which_children(pid)
-         |> Enum.map(fn {_, pid, :worker, [EctoSync.Watcher.WatcherServer]} ->
+         |> Enum.map(fn {_, pid, :worker, [EctoSync.Adapters.Postgres.Notify.WatcherServer]} ->
            WatcherServer.details(pid)
          end)}
     end

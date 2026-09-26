@@ -1,6 +1,6 @@
 defmodule PostsTags do
   @moduledoc false
-  use Ecto.Schema
+  use Schema
 
   schema "posts_tags" do
     belongs_to(:post, Post)

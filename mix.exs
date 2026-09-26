@@ -67,13 +67,23 @@ defmodule EctoSync.MixProject do
       {:phoenix_pubsub, ">= 1.0.0"},
       {:jason, ">= 1.0.0"},
       {:ecto_graph, "~> 0.2.0"},
+      {:ecto, "~> 3.14"},
       {:ecto_sql, ">= 3.0.0"},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test]},
+      {:postgrex_pgoutput, "~> 0.2.0"},
       {:mox, "~> 1.2", only: [:dev, :test]}
     ]
   end
 
   defp aliases do
-    [test: ["ecto.create --quiet -r TestRepo", "ecto.migrate --quiet -r TestRepo", "test"]]
+    [
+      test: [
+        "ecto.create --quiet -r TestRepo",
+        "ecto.create -r TestSyncRepo",
+        "ecto.migrate --quiet -r TestRepo",
+        "ecto.migrate -r TestSyncRepo --migrations-path priv/test_repo/migrations",
+        "test"
+      ]
+    ]
   end
 end

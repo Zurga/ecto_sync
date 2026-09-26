@@ -1,6 +1,6 @@
 defmodule Tag do
   @moduledoc false
-  use Ecto.Schema
+  use Schema
 
   schema "tags" do
     field(:name, :string)

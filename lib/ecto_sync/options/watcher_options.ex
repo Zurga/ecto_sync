@@ -1,5 +1,5 @@
 # Original code copied and maybe modified from EctoWatch
-defmodule EctoSync.Watcher.Options.WatcherOptions do
+defmodule EctoSync.Options.WatcherOptions do
   @moduledoc false
 
   alias EctoSync.Helpers
@@ -77,6 +77,8 @@ defmodule EctoSync.Watcher.Options.WatcherOptions do
       }
     end
   end
+
+  def validate(%__MODULE__{} = watcher_options), do: {:ok, watcher_options}
 
   def validate({schema_definition, update_type}) do
     validate({schema_definition, update_type, []})
