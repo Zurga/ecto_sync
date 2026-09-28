@@ -2,7 +2,7 @@ defmodule EctoSync.Helpers do
   @moduledoc false
 
   require Logger
-  alias EctoSync.Config
+  alias EctoSync.SyncParams
 
   def debug_log(watcher_identifier, message) do
     Logger.debug("EctoSync | #{inspect(watcher_identifier)} | #{inspect(self())} | #{message}")
@@ -62,11 +62,8 @@ defmodule EctoSync.Helpers do
   def get_encoded_label(watcher_identifier),
     do: :persistent_term.get({EctoSync, watcher_identifier}, watcher_identifier)
 
-  def get_watcher_identifier(label),
-    do: :persistent_term.get({EctoSync, label}, label)
-
-  def get_from_cache(%Config{
-        repo: repo,
+  def get_from_cache(%SyncParams{
+        repo_mod: repo,
         ref: ref,
         cache_name: cache_name,
         id: id,
@@ -96,9 +93,13 @@ defmodule EctoSync.Helpers do
         value
 
       {:error, error} ->
-        IO.inspect(error, label: :cachex_error)
         error
     end
+  end
+
+  def id(%{__struct__: schema_mod} = value) when is_struct(value) do
+    primary_key(schema_mod)
+    |> then(&Map.get(value, &1))
   end
 
   def kw_deep_merge([{k1, v1} | list1], [{k1, v1} | list2]) do
@@ -169,9 +170,10 @@ defmodule EctoSync.Helpers do
   def nested_sort([{k, v} | rest]), do: [{k, nested_sort(v)} | nested_sort(rest)]
   def nested_sort(list), do: Enum.sort(list)
 
+  def primary_key(%Ecto.Changeset{data: data}) when is_struct(data), do: primary_key(data)
+
   def primary_key(%{__struct__: schema_mod} = value) when is_struct(value) do
     primary_key(schema_mod)
-    |> then(&Map.get(value, &1))
   end
 
   def primary_key(schema_mod) when is_atom(schema_mod) do
@@ -220,6 +222,23 @@ defmodule EctoSync.Helpers do
       %Ecto.Association.HasThrough{through: through} ->
         resolve_through(schema, through)
     end
+  end
+
+  def to_struct(schema, data) do
+    permitted =
+      data
+      |> Map.keys()
+      |> then(fn keys ->
+        if Enum.any?(keys, &is_binary/1) do
+          keys
+          |> Enum.map(&String.to_existing_atom/1)
+        else
+          keys
+        end
+      end)
+
+    Ecto.Changeset.cast(struct(schema), data, permitted)
+    |> Ecto.Changeset.apply_changes()
   end
 
   def walk_preloaded_assocs(value, acc \\ nil, function)

@@ -1,5 +1,5 @@
 # Original code copied and maybe modified from EctoWatch
-defmodule EctoSync.Watcher.WatcherTriggerValidator do
+defmodule EctoSync.Adapters.Postgres.Notify.WatcherTriggerValidator do
   @moduledoc """
   Internal task run as part of the EctoSync.Watcher supervision tree to check for a match between the triggers
   that are in the database and the triggers that were started via the configuration.
@@ -7,7 +7,7 @@ defmodule EctoSync.Watcher.WatcherTriggerValidator do
   Used internally, but you'll see it in your application supervision tree.
   """
 
-  alias EctoSync.Watcher.WatcherSupervisor
+  alias EctoSync.Adapters.Postgres.Notify.WatcherSupervisor
 
   use Task, restart: :transient
 

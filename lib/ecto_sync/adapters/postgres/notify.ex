@@ -1,27 +1,21 @@
 # Original code copied and maybe modified from EctoWatch
-defmodule EctoSync.Watcher do
+defmodule EctoSync.Adapters.Postgres.Notify do
   @moduledoc """
   A library to allow you to easily get notifications about database changes directly from PostgreSQL.
   """
 
   alias EctoSync.Helpers
-  alias EctoSync.Watcher.WatcherServer
-  alias EctoSync.Watcher.WatcherTriggerValidator
+
+  alias EctoSync.Adapters.Postgres.Notify.{
+    WatcherServer,
+    WatcherSupervisor,
+    WatcherTriggerValidator
+  }
 
   use Supervisor
 
   def start_link(opts) do
-    case EctoSync.Watcher.Options.validate(opts) do
-      {:ok, validated_opts} ->
-        options = EctoSync.Watcher.Options.new(validated_opts)
-
-        validate_watcher_uniqueness(options.watchers)
-
-        Supervisor.start_link(__MODULE__, options, name: __MODULE__)
-
-      {:error, errors} ->
-        raise ArgumentError, "Invalid options: #{Exception.message(errors)}"
-    end
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   def init(options) do
@@ -35,7 +29,7 @@ defmodule EctoSync.Watcher do
 
     children = [
       {Postgrex.Notifications, postgrex_notifications_options},
-      {EctoSync.Watcher.WatcherSupervisor, options},
+      {WatcherSupervisor, options},
       {WatcherTriggerValidator, nil}
     ]
 
@@ -68,27 +62,15 @@ defmodule EctoSync.Watcher do
     validate_watcher_running!()
 
     with :ok <- validate_identifier(watcher_identifier),
-         {:ok, {pub_sub_mod, channel_name, debug?}} <-
+         {:ok, {_pub_sub_mod, _channel_name, debug?}} <-
            WatcherServer.pub_sub_subscription_details(watcher_identifier, id) do
       if(debug?, do: debug_log(watcher_identifier, "Subscribing to watcher"))
-
-      Phoenix.PubSub.subscribe(pub_sub_mod, channel_name)
     else
       {:error, error} ->
         raise ArgumentError, error
     end
   end
 
-  @doc """
-  Unsubscribe from notifications from watchers that you previously subscribe. It
-  receives the same params for `subscribe/2`.
-
-  Examples:
-
-      iex> EctoSync.Watcher.unsubscribe({Comment, :updated})
-      iex> EctoSync.Watcher.unsubscribe({Comment, :updated}, {:post_id, post_id})
-  """
-  @spec unsubscribe(watcher_identifier(), term()) :: :ok | {:error, term()}
   def unsubscribe(watcher_identifier, id \\ nil) do
     validate_watcher_running!()
 
@@ -167,48 +149,6 @@ defmodule EctoSync.Watcher do
     if !Process.whereis(__MODULE__) do
       raise "EctoSync.Watcher is not running. Please start it by adding it to your supervision tree or using EctoSync.Watcher.start_link/1"
     end
-  end
-
-  defp validate_watcher_uniqueness(watcher_options) do
-    {without_labels, with_labels} = Enum.split_with(watcher_options, &(&1.label == nil))
-
-    duplicate_labels =
-      with_labels
-      |> Enum.map(& &1.label)
-      |> duplicate_values()
-
-    duplicate_schema_and_update_types =
-      without_labels
-      |> Enum.map(&{&1.schema_definition.label, &1.update_type})
-      |> duplicate_values()
-
-    error_messages =
-      [
-        if length(duplicate_labels) > 0 do
-          """
-          The following labels are duplicated across watchers: #{Enum.join(duplicate_labels, ", ")}
-          """
-        end,
-        if length(duplicate_schema_and_update_types) > 0 do
-          """
-          The following schema and update type combinations are duplicated across watchers:
-
-            #{Enum.map_join(duplicate_schema_and_update_types, "\n\n  ", &inspect/1)}
-          """
-        end
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    if length(error_messages) > 0 do
-      raise ArgumentError, Enum.join(error_messages, "\n")
-    end
-  end
-
-  defp duplicate_values(values) do
-    values
-    |> Enum.group_by(&Function.identity/1)
-    |> Enum.filter(fn {_, values} -> length(values) >= 2 end)
-    |> Enum.map(fn {_, [value | _]} -> value end)
   end
 
   defp debug_log(watcher_identifier, message) do
