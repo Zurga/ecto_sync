@@ -20,7 +20,7 @@ defmodule EctoSync do
 
   use Supervisor
   require Logger
-  alias EctoSync.{Options, Subscriber, Syncer, SyncParams, Watcher}
+  alias EctoSync.{Subscriber, Syncer, SyncParams, Watcher}
 
   alias Ecto.Association.{BelongsTo, Has, ManyToMany}
   import EctoSync.Helpers
@@ -85,7 +85,7 @@ defmodule EctoSync do
   @doc """
   Determines whether or not the event was sent by this process
   """
-  def should_update?({schema, event, {%{id: id}, ref}} = sync_params) do
+  def should_update?({_schema, _event, {%{id: _id}, ref}} = sync_params) do
     current = get_row_ref(sync_params)
 
     if is_nil(current) do
@@ -427,7 +427,7 @@ defmodule EctoSync do
   defp coerce_to_ref_key({%schema_mod{}, event_or_id}), do: {schema_mod, event_or_id}
   defp coerce_to_ref_key({_ecto_schema, _event_or_id} = key), do: key
 
-  defp coerce_to_ref_key({schema, event, {%{id: id}, _ref}}) do
+  defp coerce_to_ref_key({schema, _event, {%{id: id}, _ref}}) do
     # id
     # case event do
     #   :inserted = event -> {schema, id}
@@ -463,7 +463,7 @@ defmodule EctoSync do
     key = coerce_to_ref_key(keyable)
 
     with %{global_counter_table: global_counter_table} <- :persistent_term.get(__MODULE__, nil) do
-      global_count = :ets.delete(global_counter_table, key)
+      :ets.delete(global_counter_table, key)
 
       updated =
         get_local_id_counters()
